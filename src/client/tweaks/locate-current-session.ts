@@ -34,7 +34,10 @@
  *     contains the substring `groupSection` (a semantic fragment DSH
  *     keeps even when its hashed prefix changes).
  *   • Workspace header row: `[role="treeitem"][aria-expanded]` inside the
- *     same group container.
+ *     same group container, identified by the `WorkspaceId` its
+ *     `ProjectRowItem` memoizes (`props.group.key`, read off the fiber
+ *     chain) — never by its visible label, which two Workspaces may share
+ *     when their directories are both named e.g. `pi-web`.
  *
  * ## Lifecycle
  *
@@ -54,7 +57,7 @@ interface SessionListShape {
   getSnapshot(): { byId: Record<string, { title?: string } | undefined> }
 }
 interface WorkspaceListShape {
-  getSnapshot(): { items: ReadonlyArray<{ title: string, sessionIds: readonly string[] }> }
+  getSnapshot(): { items: ReadonlyArray<{ workspaceId: string, title: string, sessionIds: readonly string[] }> }
 }
 
 
@@ -303,49 +306,47 @@ function readCurrentSessionTitle(): string | null {
 }
 
 /**
- * Find the sidebar treeitem that hosts the given session title. Walks every
- * `[class*="groupSection"]` in the sidebar and, for each one that is
- * currently expanded, looks for a session treeitem whose textContent starts
- * with `title` (titles are unique per workspace, so prefix match is enough
- * — sidebar rows also include trailing "1天" / "20小时" labels).
+ * Find the sidebar treeitem that hosts the given session title inside one
+ * group. Scoped to the group the session's workspace resolved to, because the
+ * title alone is not unique across the sidebar: two Workspaces may carry the
+ * same label (their directories' basenames), and any two sessions may share a
+ * title. For the same reason the group must be walked rather than assumed
+ * expanded — a collapsed group renders no session rows at all.
+ *
+ * The text match is a prefix match because sidebar rows append a relative
+ * time ("1天" / "20小时") after the title.
  *
  * Returns null when no match is found (e.g. the workspace is currently
- * collapsed, hiding its session rows). The caller falls back to the title
- * itself for the workspace lookup.
+ * collapsed, hiding its session rows).
  */
-function findSessionRow(title: string): HTMLElement | null {
-  for (const group of document.querySelectorAll<HTMLElement>(GROUP_SELECTOR)) {
-    const projectRow = group.querySelector<HTMLElement>(PROJECT_ROW_SELECTOR)
-    if (projectRow?.getAttribute('aria-expanded') !== 'true') continue
-    for (const session of group.querySelectorAll<HTMLElement>('[role="treeitem"]:not([aria-expanded])')) {
-      if ((session.textContent ?? '').trimStart().startsWith(title)) {
-        return session
-      }
+function findSessionRow(title: string, group: HTMLElement): HTMLElement | null {
+  if (group.querySelector<HTMLElement>(PROJECT_ROW_SELECTOR)?.getAttribute('aria-expanded') !== 'true') {
+    return null
+  }
+  for (const session of group.querySelectorAll<HTMLElement>('[role="treeitem"]:not([aria-expanded])')) {
+    if ((session.textContent ?? '').trimStart().startsWith(title)) {
+      return session
     }
   }
   return null
 }
 
 /**
- * Find the workspace projectRow (and its enclosing groupSection) that
- * contains the given session title. First tries an exact session-row match
- * in expanded groups; if none, matches by workspace title text using the
- * hint derived from the current session title (we use the current title
- * itself as a last-ditch hint — DSH sidebar group headers don't carry
- * their workspace id as a stable attribute, so workspace title matching is
- * the only DOM-resident anchor we have).
- */
-
-/**
- * Resolve the workspace title for the current session via the app stores.
+ * Resolve the workspace **id** owning the current session via the app stores.
  * `ctx.get('sessions').list.byId` maps id→{title}; `ctx.get('workspaces')
  * .list.items[*].sessionIds` lists which sessions live in each workspace.
- * Returns the workspace title (the same string DSH renders into the
- * sidebar project row), or null when either store is unavailable, the
- * session is not present in any workspace (ungrouped / archived), or the
- * breadcrumb title does not match any known session.
+ *
+ * The id, not the title, is what identifies the sidebar row: `WorkspaceView
+ * .title` defaults to the directory basename, so two Workspaces under
+ * different parents can share one (the Host only rejects a colliding
+ * *rename*, `workspace/name-conflict`), and a title-keyed lookup then opens
+ * whichever of the two happens to come first.
+ *
+ * Returns null when either store is unavailable, the session is not present
+ * in any workspace (ungrouped / archived), or the breadcrumb title does not
+ * match any known session.
  */
-function resolveWorkspaceTitle(
+function resolveWorkspaceId(
   title: string,
   sessionList: SessionListShape | undefined,
   workspaceList: WorkspaceListShape | undefined,
@@ -361,22 +362,61 @@ function resolveWorkspaceTitle(
   }
   if (sessionId === undefined) return null
   for (const ws of workspaceList.getSnapshot().items) {
-    if (ws.sessionIds.includes(sessionId)) return ws.title
+    if (ws.sessionIds.includes(sessionId)) return ws.workspaceId
   }
   return null
 }
 
+/** Minimal shape of React's internal fiber node, for the props walk only. */
+interface FiberLike {
+  readonly memoizedProps?: unknown
+  readonly return?: FiberLike | null | undefined
+}
+
+/** React keys its internal fiber on the DOM node with this prefix. */
+const FIBER_KEY_PREFIX = '__reactFiber$'
+/** Cap the upward walk; `ProjectRowItem` sits a handful of levels above the row. */
+const FIBER_WALK_LIMIT = 32
+/** Row element → its (stable) React fiber key. Cached because `Object.keys` allocates. */
+const fiberKeys = new WeakMap<Element, string>()
+
 /**
- * Find the sidebar projectRow whose text equals `workspaceTitle`. DSH
- * renders each workspace header as a treeitem whose textContent is the
- * raw title (verified live: "dsh-dialog-width" while collapsed, same when
- * expanded). Returns the treeitem + its enclosing groupSection for click.
+ * Group key behind one project header row: `ProjectRowItem` memoizes
+ * `props.group.key`, which is the `WorkspaceId` (or `''` for the Ungrouped
+ * bucket). Same defensive walk as `project-running-indicator.ts`, and for the
+ * same reason: the rendered label is not a usable identity. A missing fiber,
+ * a renamed component or a recycled row all read as `undefined`, and the
+ * caller then simply finds nothing rather than the wrong group.
  */
-function findProjectRowByTitle(workspaceTitle: string): { group: HTMLElement, projectRow: HTMLElement } | null {
+function groupKeyOfRow(row: Element): string | undefined {
+  let key = fiberKeys.get(row)
+  if (key === undefined) {
+    key = Object.keys(row).find(candidate => candidate.startsWith(FIBER_KEY_PREFIX))
+    if (key === undefined) return undefined
+    fiberKeys.set(row, key)
+  }
+  let fiber = (row as unknown as Record<string, FiberLike | undefined>)[key]
+  for (let depth = 0; fiber != null && depth < FIBER_WALK_LIMIT; depth++) {
+    const props = (fiber.memoizedProps ?? {}) as { readonly group?: { readonly key?: unknown } | null }
+    const groupKey = props.group?.key
+    if (typeof groupKey === 'string') return groupKey
+    fiber = fiber.return ?? undefined
+  }
+  return undefined
+}
+
+/**
+ * Find the sidebar projectRow carrying the given workspace id, plus its
+ * enclosing groupSection. The id comes off the row's own fiber props, so a
+ * row is only ever returned when it belongs to exactly the requested
+ * workspace — unlike a text comparison, which cannot tell two same-named
+ * Workspaces apart.
+ */
+function findProjectRowByGroupKey(workspaceId: string): { group: HTMLElement, projectRow: HTMLElement } | null {
   for (const group of document.querySelectorAll<HTMLElement>(GROUP_SELECTOR)) {
     const projectRow = group.querySelector<HTMLElement>(PROJECT_ROW_SELECTOR)
     if (projectRow === null) continue
-    if ((projectRow.textContent ?? '').trim() === workspaceTitle) {
+    if (groupKeyOfRow(projectRow) === workspaceId) {
       return { group, projectRow }
     }
   }
@@ -426,14 +466,14 @@ function performLocate(
   }
 
   // Slow path: the workspace is collapsed (the session row is not in the
-  // DOM). Look up the workspace title from the app stores.
-  const workspaceTitle = resolveWorkspaceTitle(title, sessionList, workspaceList)
-  if (workspaceTitle === null) {
+  // DOM). Look up the owning workspace id from the app stores.
+  const workspaceId = resolveWorkspaceId(title, sessionList, workspaceList)
+  if (workspaceId === null) {
     // No store or no mapping — bail. The breadcrumb still tells the user
     // which session is current.
     return
   }
-  const hit = findProjectRowByTitle(workspaceTitle)
+  const hit = findProjectRowByGroupKey(workspaceId)
   if (hit === null) {
     // The session belongs to a workspace that's not in the sidebar at all
     // (e.g. archived). Nothing to reveal.
@@ -465,8 +505,8 @@ function performLocate(
   } else {
     // Workspace open but the selected marker is missing (DSH state edge
     // case, or the row hides behind the overflow button): re-query by
-    // title within the expanded group.
-    session = findSessionRow(title)
+    // title, scoped to this workspace's group.
+    session = findSessionRow(title, group)
     if (session !== null) {
       session.scrollIntoView({ block: 'center', behavior: 'smooth' })
     } else {

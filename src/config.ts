@@ -109,12 +109,16 @@ export interface StyleTweaksConfig {
    */
   codeBlockFlushTop?: boolean
   /**
-   * Show the conversation title's animated running dot on the right side of
-   * every project directory header row in the sidebar, so a running
-   * conversation stays visible even when its group is collapsed. The dot is
-   * DSH's own `StateDot` (shared instance) driven by the app's
-   * sessions/workspaces stores — pendingInteraction (amber) needs the
-   * ui-session service face and is out of scope; only ongoing shows.
+   * Show the conversation title's animated running dot in the sidebar, so
+   * work in flight stays visible: on the right side of every project
+   * directory header row (visible even when its group is collapsed), and in
+   * a session row's status slot when the app left it empty (which is what a
+   * background job produces — the run outlives its turn). Rows are matched
+   * by workspace id / session id read off React's fiber chain, never by the
+   * display label, which two Workspaces may share. The dot is DSH's own
+   * `StateDot` (shared instance) driven by the app's sessions/workspaces
+   * stores — pendingInteraction (amber) needs the ui-session service face
+   * and is out of scope; only ongoing shows.
    */
   projectRunningIndicator?: boolean
   /**

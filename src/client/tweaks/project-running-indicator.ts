@@ -26,20 +26,20 @@
  * survive CSS-Modules hashing:
  *
  *   - group header rows are the only `role="treeitem"` elements carrying
- *     `aria-expanded` (session rows and flat-list rows never have it);
- *   - the row's title text is the only `:scope > span > span` descendant
- *     with non-empty text (folder/chevron slots hold bare SVGs, the action
- *     buttons' labels live on `aria-label`, not text);
+ *     `aria-expanded` (session rows and flat-list rows never have it),
+ *     including the Ungrouped bucket's;
  *   - session rows are the `role="treeitem"` elements whose class carries the
  *     CSS-Modules local name `sessionRow` — the search-result rows are
  *     `searchResultRow`, which does not contain that fragment.
  *
- * A row's session id is the one fact the DOM does not carry, so it is read
- * off React's fiber chain: `SessionNodeItem` memoizes `props.node`, whose
- * `id` is the `SessionId`. The walk is defensive (a missing fiber, a renamed
- * component, or a reused row all read as "unknown id") and re-checked every
- * pass, because a recycled row can hold a different session than it did last
- * time.
+ * Neither row type carries its identity in the DOM — and the header's visible
+ * label is not usable as one, since two Workspaces may share it — so both are
+ * read off the React fiber chain — `SessionNodeItem` memoizes `props.node`
+ * (whose `id` is the `SessionId`) and `ProjectRowItem` memoizes `props.group`
+ * (whose `key` is the `WorkspaceId`, or `''` for the Ungrouped bucket). The
+ * walks are defensive (a missing fiber, a renamed component, or a reused row
+ * all read as "unknown") and re-checked every pass, because a recycled row
+ * can hold a different session/group than it did last time.
  *
  * ## Data source
  *
@@ -69,10 +69,16 @@
  * sessions are skipped, sessions not in any workspace count toward the
  * "Ungrouped" bucket.
  *
- * Header rows are matched to workspaces by title text; a header whose label
- * matches no workspace title is the Ungrouped bucket. This avoids depending
- * on DSH's locale copy for the bucket label (and tolerates renames for
- * free, since the title text *is* the match key).
+ * Header rows are matched to workspaces by group key (the `WorkspaceId`), not
+ * by title text: `GroupNode.label` is the directory basename
+ * (`workspaceLabel`), and nothing forbids two Workspaces from sharing one —
+ * the Host only rejects a *rename* that collides (`workspace/name-conflict`),
+ * so adding `…\a\pi-web` and `…\b\pi-web` yields two groups labelled
+ * "pi-web". Matching on that label would light both the moment either went
+ * busy. The key is unique by construction, and it also removes the need for
+ * the negative "label matches no workspace title" test that used to identify
+ * the Ungrouped bucket: its key is `UNGROUPED_KEY` (`''`), straight from
+ * `GroupNode.key`.
  *
  * ## Rendering
  *
@@ -90,7 +96,7 @@
  * renders its own dot there (the session started a turn, a subagent is
  * running, an interaction is pending, or an unviewed completion is showing),
  * the injected dot steps aside instead of doubling up. Group headers have no
- * such slot and are matched by title text, as before.
+ * such slot, so they carry the dot unconditionally while their group is busy.
  */
 
 import { createElement } from 'react'
@@ -138,7 +144,6 @@ interface SessionJobLike {
 /** Fields of `WorkspaceView` the membership mapping needs. */
 interface WorkspaceViewLike {
   readonly workspaceId: string
-  readonly title: string
   readonly sessionIds: readonly string[]
 }
 
@@ -149,10 +154,11 @@ interface WorkspaceSnapshotLike {
 
 /** Which rows must currently show a dot. */
 interface BusyState {
-  /** Labels with at least one busy member session. */
-  readonly busyTitles: ReadonlySet<string>
-  /** Every workspace title, for recognizing the Ungrouped header. */
-  readonly knownTitles: ReadonlySet<string>
+  /**
+   * Workspace ids with at least one busy member session. Keyed by id, never by
+   * the display label, which two Workspaces may share.
+   */
+  readonly busyWorkspaceIds: ReadonlySet<string>
   readonly ungroupedBusy: boolean
   /**
    * Sessions holding a live background job. Session rows decorate on this
@@ -182,6 +188,8 @@ const INDICATOR_CSS_ID = 'cst-project-running-indicator'
 const HEADER_SELECTOR = '[role="treeitem"][aria-expanded]'
 /** Session rows carry the CSS-Modules local name `sessionRow` (search rows do not). */
 const SESSION_ROW_SELECTOR = '[role="treeitem"][class*="sessionRow"]'
+/** `GroupNode.key` of the bucket holding sessions outside every Workspace (tree.ts). */
+const UNGROUPED_KEY = ''
 
 function installIndicatorStyles(): () => void {
   let style = document.querySelector<HTMLStyleElement>(`style[data-tweak-css="${INDICATOR_CSS_ID}"]`)
@@ -247,18 +255,16 @@ function computeBusy(
   }
   const isBusy = (id: string): boolean => isSelfBusy(id) || busyAncestors.has(id)
 
-  const busyTitles = new Set<string>()
-  const knownTitles = new Set<string>()
+  const busyWorkspaceIds = new Set<string>()
   const grouped = new Set<string>()
   for (const workspace of snapshot.items) {
-    knownTitles.add(workspace.title)
     for (const id of workspace.sessionIds) {
       grouped.add(id)
       if (archived.has(id)) continue
       const summary = list.byId[id]
       // Blank sessions are hidden from the browser (tree.ts deriveGroups).
       if (summary === undefined || summary.blank) continue
-      if (isBusy(id)) busyTitles.add(workspace.title)
+      if (isBusy(id)) busyWorkspaceIds.add(workspace.workspaceId)
     }
   }
 
@@ -272,52 +278,77 @@ function computeBusy(
     if (isBusy(id)) { ungroupedBusy = true; break }
   }
 
-  return { busyTitles, knownTitles, ungroupedBusy, liveJobIds }
+  return { busyWorkspaceIds, ungroupedBusy, liveJobIds }
 }
 
-/** Title text of a header row: the only span-in-span with visible text. */
-function rowLabel(row: Element): string | undefined {
-  for (const span of row.querySelectorAll<HTMLSpanElement>(':scope > span > span')) {
-    const label = span.textContent?.trim()
-    if (label !== undefined && label.length > 0) return label
-  }
-  return undefined
-}
-
-/** Minimal shape of React's internal fiber node, for the id walk only. */
+/** Minimal shape of React's internal fiber node, for the props walks only. */
 interface FiberLike {
-  readonly memoizedProps?: { readonly node?: { readonly id?: unknown } } | null | undefined
+  readonly memoizedProps?: unknown
   readonly return?: FiberLike | null | undefined
+}
+
+/** The only props fields the walks read, on whichever component carries them. */
+interface FiberProps {
+  readonly node?: { readonly id?: unknown } | null | undefined
+  readonly group?: { readonly key?: unknown } | null | undefined
 }
 
 /** React keys its internal fiber on the DOM node with this prefix. */
 const FIBER_KEY_PREFIX = '__reactFiber$'
-/** Cap the upward walk; `SessionNodeItem` sits a handful of levels above the row. */
+/** Cap the upward walk; both row components sit a handful of levels above the row. */
 const FIBER_WALK_LIMIT = 32
 /** Row element → its (stable) React fiber key. Cached because `Object.keys` allocates. */
 const fiberKeys = new WeakMap<Element, string>()
 
-/**
- * Session id behind one session row. The DOM itself carries no id, so it is
- * read off the fiber chain, where `SessionNodeItem` memoizes `props.node.id`.
- * Deliberately forgiving: a build without a React fiber, a renamed component,
- * a recycled row, or any other surprise yields `undefined` and the row is then
- * simply left alone (it is re-resolved on every pass, never trusted).
- */
-function sessionIdOfRow(row: Element): string | undefined {
+/** Root fiber of one row, or `undefined` when React did not attach one. */
+function rootFiberOf(row: Element): FiberLike | undefined {
   let key = fiberKeys.get(row)
   if (key === undefined) {
     key = Object.keys(row).find(candidate => candidate.startsWith(FIBER_KEY_PREFIX))
     if (key === undefined) return undefined
     fiberKeys.set(row, key)
   }
-  let fiber = (row as unknown as Record<string, FiberLike | undefined>)[key]
+  return (row as unknown as Record<string, FiberLike | undefined>)[key]
+}
+
+/**
+ * Walk up from a row to the nearest fiber whose props satisfy `read`. Both
+ * walks are deliberately forgiving: a build without a React fiber, a renamed
+ * component, a recycled row, or any other surprise yields `undefined` and the
+ * row is then simply left alone (it is re-resolved every pass, never trusted).
+ */
+function readUpFiberChain<T>(row: Element, read: (props: FiberProps) => T | undefined): T | undefined {
+  let fiber = rootFiberOf(row)
   for (let depth = 0; fiber != null && depth < FIBER_WALK_LIMIT; depth++) {
-    const id = fiber.memoizedProps?.node?.id
-    if (typeof id === 'string') return id
+    const value = read((fiber.memoizedProps ?? {}) as FiberProps)
+    if (value !== undefined) return value
     fiber = fiber.return ?? undefined
   }
   return undefined
+}
+
+/**
+ * Session id behind one session row: `SessionNodeItem` memoizes
+ * `props.node.id`.
+ */
+function sessionIdOfRow(row: Element): string | undefined {
+  return readUpFiberChain(row, (props) => {
+    const id = props.node?.id
+    return typeof id === 'string' ? id : undefined
+  })
+}
+
+/**
+ * Group key behind one project header row: `ProjectRowItem` memoizes
+ * `props.group.key`, which is the `WorkspaceId` or `UNGROUPED_KEY` (`''`).
+ * `''` is a value, not a miss — hence the string test rather than a
+ * truthiness one.
+ */
+function groupKeyOfRow(row: Element): string | undefined {
+  return readUpFiberChain(row, (props) => {
+    const key = props.group?.key
+    return typeof key === 'string' ? key : undefined
+  })
 }
 
 /** The session row's status slot: the leading span the app's own StateDot lives in. */
@@ -386,15 +417,16 @@ export function setupProjectRunningIndicator(ctx: ClientContext): () => void {
   }
 
   const syncHeaderRow = (row: Element, busy: BusyState): void => {
-    const label = rowLabel(row)
-    if (label === undefined) return
-    // The Ungrouped bucket is the header whose label matches no workspace
-    // title — its label is DSH locale copy, so it is matched negatively.
-    const active = busy.busyTitles.has(label)
-      || (busy.ungroupedBusy && !busy.knownTitles.has(label))
+    // Resolved per pass, never cached: a row can be recycled onto another
+    // group, and the key is what keeps two same-named Workspaces apart.
+    const key = groupKeyOfRow(row)
+    if (key === undefined) return
+    const active = key === UNGROUPED_KEY
+      ? busy.ungroupedBusy
+      : busy.busyWorkspaceIds.has(key)
     let indicator = indicators.get(row)
     if (!active) {
-      // Group went idle (or the row lost its label): unmount the dot.
+      // Group went idle (or the row lost its identity): unmount the dot.
       if (indicator !== undefined) removeIndicator(indicators, row)
       return
     }
