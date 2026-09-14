@@ -29,6 +29,7 @@ A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) web 
 - **Legacy stats line (default off)** — since DSH 0.1.5 the stats under the input box are two icon pills that open dialogs; this tweak brings back the pre-0.1.5 centered text line (turns/steps · timings · speed · cache hit · tokens). It reads the same durable projections (`sessionStats` / `tokenUsage`) so every figure matches the pills; an overlong line truncates with an ellipsis and reveals itself on hover, and turning the tweak off hands the row straight back to the pills.
 - **Cache hit with two decimals (default off)** — shows the composer stats' cache-hit share with two decimal places (e.g. `87.35%`) instead of integer rounding; the token-usage dialog follows. Applies to both presentations — the new icon pills and the legacy text line alike; with both toggles on, the legacy line renders and takes the flag.
 - **Turn speed & TTFT (default off)** — since 0.1.5, cold sessions no longer rebuild per-token timing, so each turn's time dialog keeps only the wall-clock duration. Clicking a turn's time pill refills that dialog with the output speed and TTFT rows, rebuilt from the model stream embedded in the session log; history loads get the same figures a live session did.
+- **Closable workspaces (default off)** — hide a Workspace from the sidebar list and the New Session picker instead of deleting it: the host registry row, its session account, the files on disk and every session log are all kept, the Workspace and every session keep their account position, and **its sessions are hidden with it** (they never fall into Ungrouped, and search stops listing them); restoring the Workspace brings the whole group back. Restore it by re-adding the same folder (the host resolves it by canonical path and returns the same Workspace) or from the "Closed workspaces" list in the Style tweaks settings panel (each entry reveals its folder on hover). The entry sits in each Workspace row's `...` menu, above "Delete workspace", behind a confirmation that spells out what is kept. Three boundaries: a closed Workspace's manual session order is not preserved (sessions show in host account order); closing the Workspace a session is currently open in hands you straight to a new session (in the most recent visible Workspace); and "New session" triggered from a session inside a closed Workspace falls back to the most recent **visible** Workspace (the host's own fallback).
 
 ```yaml
 style-tweaks:
@@ -52,6 +53,8 @@ style-tweaks:
   legacyStatsLine: false           # default false; true swaps the pills for the 0.1.2 text line
   pillsCacheHitDecimals: false     # default false; true shows the cache hit with two decimals (pills and legacy line)
   turnSpeedMetrics: false          # default false; true refills the turn-time dialog with output speed and TTFT
+  workspaceClose: false            # default false; true enables closing (hiding) a Workspace from its row menu
+  closedWorkspaces: []             # ids of closed Workspaces (internal data; managed by the panel's list)
 ```
 
 Settings entry: **Settings → Style tweaks**.

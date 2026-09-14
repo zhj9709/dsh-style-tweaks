@@ -26,6 +26,7 @@ import {
   DEFAULT_RIGHTBAR_INITIAL_WIDTH,
   DEFAULT_THINK_FIXED_HEIGHT,
   DEFAULT_USE_PLUGIN_WIDTH,
+  DEFAULT_WORKSPACE_CLOSE,
   MAX_DIALOG_WIDTH,
   MAX_RIGHTBAR_WIDTH_PERCENT,
   MAX_THINK_HEIGHT,
@@ -33,6 +34,7 @@ import {
   MIN_RIGHTBAR_WIDTH_PERCENT,
   MIN_SIDE_MARGIN,
   MIN_THINK_HEIGHT,
+  resolveClosedWorkspaces,
   resolveDialogWidth,
   resolveRightbarPercent,
   resolveSideMargin,
@@ -52,6 +54,7 @@ import { installRightbarInitialWidth } from './tweaks/rightbar-initial-width.ts'
 import { setupLegacyStatsLine } from './tweaks/legacy-stats-line.tsx'
 import { setupPillsCacheHitDecimals } from './tweaks/pills-cache-hit-decimals.tsx'
 import { setupTurnSpeedMetrics } from './tweaks/turn-speed-metrics.tsx'
+import { closedWorkspaceEntries, restoreClosedWorkspace, setupWorkspaceClose } from './tweaks/workspace-close.ts'
 
 const NS = 'style-tweaks'
 const SETTINGS_ROUTE = '/_dsh/style-tweaks/settings'
@@ -64,7 +67,7 @@ const SETTINGS_ROUTE = '/_dsh/style-tweaks/settings'
  * settings read the resolved snapshot (captured at mount — any settings
  * change remounts every tweak, so the capture never goes stale).
  */
-const TWEAK_INJECTORS: Record<string, (ctx: ClientContext, resolved: ResolvedTweaks) => () => void> = {
+const TWEAK_INJECTORS: Record<string, (ctx: ClientContext, resolved: ResolvedTweaks, settings: SettingsClient) => () => void> = {
   'stable-table': () => injectStableTableStyles(),
   'stable-turn-rail': () => injectStableTurnRailStyles(),
   'keep-turn-rail': () => injectKeepTurnRailStyles(),
@@ -76,6 +79,7 @@ const TWEAK_INJECTORS: Record<string, (ctx: ClientContext, resolved: ResolvedTwe
   'legacy-stats-line': (ctx, resolved) => setupLegacyStatsLine(ctx, resolved.pillsCacheHitDecimals),
   'pills-cache-hit-decimals': setupPillsCacheHitDecimals,
   'turn-speed-metrics': setupTurnSpeedMetrics,
+  'workspace-close': (ctx, resolved, settings) => setupWorkspaceClose(ctx, resolved, settings),
 }
 
 interface TweaksValue {
@@ -113,6 +117,10 @@ interface TweaksValue {
   pillsCacheHitDecimals?: boolean
   /** Whether the turn-speed-metrics tweak is enabled. */
   turnSpeedMetrics?: boolean
+  /** Whether the user can close (hide) Workspaces without deleting them. */
+  workspaceClose?: boolean
+  /** Ids of the Workspaces currently closed (internal data, recovery list only). */
+  closedWorkspaces?: string[]
   /** Whether the plugin owns the right Sidebar's first-open width. */
   rightbarInitialWidth?: boolean
   /** Right Sidebar first-open width as a percentage of the frame; clamped to [15, 70]. */
@@ -136,6 +144,8 @@ interface ResolvedTweaks {
   legacyStatsLine: boolean
   pillsCacheHitDecimals: boolean
   turnSpeedMetrics: boolean
+  workspaceClose: boolean
+  closedWorkspaces: readonly string[]
   rightbarInitialWidth: boolean
   rightbarWidthPercent: number
 }
@@ -148,6 +158,22 @@ interface Snapshot {
 
 interface ApiSuccess<T> { ok: true; value: T }
 interface ApiFailure { ok: false; error: { code: string; message: string } }
+
+/**
+ * Failure carrying the server's machine-readable status/code, so callers can
+ * act on the class of failure (e.g. "lost a revision race") instead of
+ * parsing messages. `apiRequest` raises it for every parsed non-success
+ * response; a fetch-level error (offline, CORS) keeps its plain identity.
+ */
+class SettingsApiError extends Error {
+  readonly status: number
+  readonly code: string
+  constructor(status: number, code: string, message: string) {
+    super(message)
+    this.status = status
+    this.code = code
+  }
+}
 
 const en = {
   nav: 'Style tweaks',
@@ -204,6 +230,17 @@ const en = {
   'tweak.pillsCacheHitDecimals.description': 'Show the composer stats\' cache-hit share with two decimal places (87.35%) instead of integer rounding — applies to the new icon pills and the legacy text line alike, whichever is showing.',
   'tweak.turnSpeedMetrics.title': 'Turn speed & TTFT',
   'tweak.turnSpeedMetrics.description': 'Since 0.1.5, cold sessions no longer rebuild per-token timing, so the turn-time dialog keeps only the wall-clock duration. Refills that dialog with the output speed and TTFT rows (rebuilt from the model stream embedded in the session log) when you click the time pill.',
+  'tweak.workspaceClose.title': 'Closable workspaces',
+  'tweak.workspaceClose.description': 'Hide a Workspace from the sidebar and the New Session picker without deleting it — its sessions are hidden with it (they never fall into Ungrouped), while the registry entry, the session account and the files on disk are all kept. Restore it by re-adding the same folder, or from the recovery list in this panel.',
+  workspaceCloseMenu: 'Close workspace',
+  workspaceCloseConfirmTitle: 'Close workspace',
+  workspaceCloseConfirmBody: 'This hides “{name}” from the Workspace list. The folder, its files and every session record are kept — re-add the same folder, or use the recovery list in Style tweaks settings, to show it again.',
+  workspaceCloseConfirmOk: 'Close workspace',
+  workspaceCloseCancel: 'Cancel',
+  workspaceCloseBusy: 'Closing workspace…',
+  workspaceCloseClosedSection: 'Closed workspaces',
+  workspaceCloseClosedSectionHint: 'These Workspaces are hidden from the sidebar and the New Session picker. Their folders, files and sessions are untouched.',
+  workspaceCloseRestore: 'Restore',
   'legacyStats.counts': '{turns} turns · {steps} steps',
   'legacyStats.llm': 'LLM {duration}',
   'legacyStats.toolCall': 'Tool call {duration}',
@@ -294,6 +331,17 @@ const zh: Record<LocaleKey, string> = {
   'tweak.pillsCacheHitDecimals.description': '缓存命中率按两位小数显示（如 87.35%），不再取整；无论统计信息以新版图标胶囊还是经典文本行展示，均适用。',
   'tweak.turnSpeedMetrics.title': '轮次速度与首 token 用时',
   'tweak.turnSpeedMetrics.description': '0.1.5 起冷会话不再重建逐 token 时序，"本轮用时和速度"弹窗只剩总用时。开启后点击用时胶囊时，弹窗会回填输出速度与首 token 用时两行（由会话日志内嵌的模型流重建，历史会话同样生效）。',
+  'tweak.workspaceClose.title': '工作区可关闭',
+  'tweak.workspaceClose.description': '把工作区从侧边栏与新建会话选择器中隐藏，而不是删除：其名下会话一并隐藏（不会落入“未分组”，搜索里也不再出现），而注册记录、会话账目与磁盘文件全部保留。重新添加同一文件夹，或使用本面板中的「已关闭的工作区」列表即可恢复显示。',
+  workspaceCloseMenu: '关闭工作区',
+  workspaceCloseConfirmTitle: '关闭工作区',
+  workspaceCloseConfirmBody: '将把“{name}”从工作区列表中关闭。文件夹、文件与会话记录都会保留；重新添加同一文件夹，或在样式调整设置中使用「已关闭的工作区」列表，即可恢复显示。',
+  workspaceCloseConfirmOk: '关闭工作区',
+  workspaceCloseCancel: '取消',
+  workspaceCloseBusy: '正在关闭工作区…',
+  workspaceCloseClosedSection: '已关闭的工作区',
+  workspaceCloseClosedSectionHint: '这些工作区已从侧边栏与新建会话选择器中隐藏；其文件夹、文件与会话记录均未改动。',
+  workspaceCloseRestore: '恢复',
   'legacyStats.counts': '{turns} 轮 · {steps} 步',
   'legacyStats.llm': 'LLM {duration}',
   'legacyStats.toolCall': '工具调用 {duration}',
@@ -354,9 +402,27 @@ function resolveValue(value: TweaksValue | undefined): ResolvedTweaks {
     legacyStatsLine: value?.legacyStatsLine ?? false,
     pillsCacheHitDecimals: value?.pillsCacheHitDecimals ?? false,
     turnSpeedMetrics: value?.turnSpeedMetrics ?? false,
+    workspaceClose: value?.workspaceClose ?? DEFAULT_WORKSPACE_CLOSE,
+    closedWorkspaces: resolveClosedWorkspaces(value?.closedWorkspaces),
     rightbarInitialWidth: value?.rightbarInitialWidth ?? DEFAULT_RIGHTBAR_INITIAL_WIDTH,
     rightbarWidthPercent: resolveRightbarPercent(value?.rightbarWidthPercent),
   }
+}
+
+/**
+ * Whether two resolved snapshots would mount the same tweaks with the same
+ * captured values. `closedWorkspaces` is deliberately ignored: it drives no
+ * mount decision (only the `workspaceClose` boolean does) and the
+ * workspace-close tweak holds its own live channel to the settings client, so
+ * it re-filters in place. Excluding it keeps a close/restore — by far the most
+ * frequent settings change this plugin sees — from re-mounting every tweak.
+ */
+function sameMountInputs(left: ResolvedTweaks, right: ResolvedTweaks): boolean {
+  for (const key of Object.keys(right) as Array<keyof ResolvedTweaks>) {
+    if (key === 'closedWorkspaces') continue
+    if (left[key] !== right[key]) return false
+  }
+  return true
 }
 
 const BASE_CSS = `
@@ -375,7 +441,7 @@ const BASE_CSS = `
 .cst-label{display:inline-flex;align-items:center;gap:6px}
 .cst-hint{flex:none;display:inline-grid;place-items:center;width:15px;height:15px;border-radius:50%;border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-tertiary);font-size:9.5px;font-weight:600;font-style:normal;line-height:1;cursor:help;user-select:none;transition:color .15s ease,border-color .15s ease}
 .cst-hint:hover,.cst-hint:focus-visible{color:var(--dsw-alias-state-business-primary);border-color:var(--dsw-alias-state-business-primary)}
-.cst-hint-pop{position:fixed;z-index:9999;width:max-content;max-width:300px;padding:8px 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-size:11.5px;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,.14);pointer-events:none}
+.cst-hint-pop{position:fixed;z-index:9999;width:max-content;max-width:300px;overflow-wrap:anywhere;padding:8px 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-size:11.5px;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,.14);pointer-events:none}
 .cst-controls{display:flex;align-items:center;gap:8px}
 .cst-stepper{display:inline-flex;align-items:center;border:1px solid var(--dsw-alias-border-l1);border-radius:9px;background:var(--dsw-alias-bg-layer-2);overflow:hidden}
 .cst-stepper button{width:28px;height:28px;border:none;background:transparent;color:inherit;font-size:15px;font-weight:500;line-height:1;cursor:pointer;display:grid;place-items:center;transition:background .15s ease}
@@ -430,22 +496,32 @@ function installBaseStyles(): () => void {
  * Settings requests retry briefly on 502/503: writing the profile patch
  * hot-reloads the `web` node and restarts this plugin for a moment (it
  * injects `web`), so a toggle click can land inside that window. The retry
- * rides it out instead of surfacing "settings unavailable".
+ * rides it out instead of surfacing "settings unavailable" — fetch-level
+ * failures (connection refused mid-restart) stay in the loop for the same
+ * reason. A definite non-502/503 HTTP status is final: it must surface on
+ * the first occurrence (a 409 conflict or a plain 400 idling through six
+ * doomed round-trips before anyone sees it is the failure mode to avoid).
  */
 async function apiRequest<T>(init?: RequestInit): Promise<T> {
   let lastError: unknown
   for (let attempt = 1; attempt <= 6; attempt++) {
+    /** This round ended in a deliberate HTTP status that must not be retried. */
+    let fatal = false
     try {
       const response = await fetch(SETTINGS_ROUTE, { credentials: 'same-origin', ...init })
       const body = await response.json() as ApiSuccess<T> | ApiFailure
       if (response.ok && body.ok) return body.value
       const failure = body as ApiFailure
-      const retryable = response.status === 502 || response.status === 503
-      lastError = new Error(failure.error?.message ?? `Style tweaks request failed with HTTP ${response.status}`)
-      if (!retryable) throw lastError
+      fatal = response.status !== 502 && response.status !== 503
+      lastError = new SettingsApiError(
+        response.status,
+        failure.error?.code ?? `http-${response.status}`,
+        failure.error?.message ?? `Style tweaks request failed with HTTP ${response.status}`,
+      )
     } catch (error) {
       lastError = error
     }
+    if (fatal) throw lastError
     await new Promise((resolve) => setTimeout(resolve, attempt * 250))
   }
   throw lastError ?? new Error('Style tweaks request failed')
@@ -496,13 +572,39 @@ export class SettingsClient {
     }
   }
 
-  private async post(payload: unknown): Promise<void> {
+  /**
+   * Write one field. The expected revision is read at build time so the same
+   * payload can be rebuilt after a conflict. A save whose expected revision
+   * lost the race (another tab writing, or the settings watcher republishing
+   * a hand edit) refetches the snapshot once and retries with the fresh
+   * revision — bounded to a single attempt, so two racing writers converge
+   * while a persistent conflict still surfaces to the caller.
+   */
+  private async post(build: (revision: number) => unknown, allowConflictRetry = true): Promise<void> {
     const generation = ++this.generation
-    const snapshot = await apiRequest<Snapshot>({
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
+    let snapshot: Snapshot
+    try {
+      snapshot = await apiRequest<Snapshot>({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(build(this.state.revision ?? 0)),
+      })
+    } catch (error) {
+      if (!allowConflictRetry
+        || !(error instanceof SettingsApiError)
+        || (error.status !== 409 && error.code !== 'settings-conflict')) throw error
+      // Refetch WITHOUT bumping the generation, so the `!==` check below
+      // still tells us whether a newer write superseded us in the meantime.
+      const fresh = await apiRequest<Snapshot>()
+      if (generation !== this.generation) return
+      this.publish({
+        status: 'ready',
+        writable: fresh.writable,
+        value: fresh.value,
+        revision: fresh.revision,
+      })
+      return this.post(build, false)
+    }
     if (generation !== this.generation) return
     this.publish({
       status: 'ready',
@@ -513,11 +615,11 @@ export class SettingsClient {
   }
 
   async set(field: string, value: unknown): Promise<void> {
-    await this.post({ action: 'set', field, value, expectedRevision: this.state.revision ?? 0 })
+    await this.post((revision) => ({ action: 'set', field, value, expectedRevision: revision }))
   }
 
   async unset(field: string): Promise<void> {
-    await this.post({ action: 'unset', field, expectedRevision: this.state.revision ?? 0 })
+    await this.post((revision) => ({ action: 'unset', field, expectedRevision: revision }))
   }
 }
 
@@ -894,6 +996,45 @@ function SettingsSection({ controller, t }: SettingsSectionProps) {
           )
         })}
       </section>
+
+      {resolved.workspaceClose && resolved.closedWorkspaces.length > 0 && (
+        <section className="cst-panel">
+          <div className="cst-section-label">{t('workspaceCloseClosedSection')}</div>
+          <div className="cst-field">
+            <div className="cst-field-top">
+              <span className="cst-label">{t('workspaceCloseClosedSectionHint')}</span>
+            </div>
+          </div>
+          {closedWorkspaceEntries().map(entry => (
+            <div className="cst-field" key={entry.workspaceId}>
+              <div className="cst-field-top">
+                <span className="cst-label">
+                  {entry.title}
+                  {/* Same hint affordance as the tweak rows: two Workspaces
+                      can share a folder basename, so the folder is what
+                      actually tells them apart when restoring. */}
+                  {entry.path !== undefined ? <Hint text={entry.path} /> : null}
+                </span>
+                <div className="cst-controls">
+                  <div className="cst-seg">
+                    <button
+                      type="button"
+                      disabled={!writable}
+                      onClick={() => {
+                        // Local-first, like the close path: the live tweak drops
+                        // the id and notifies at once, then persists. `save` is
+                        // only the fallback for a window where it is unmounted.
+                        if (restoreClosedWorkspace(entry.workspaceId)) return
+                        save('closedWorkspaces', resolved.closedWorkspaces.filter(id => id !== entry.workspaceId))
+                      }}
+                    >{t('workspaceCloseRestore')}</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
     </div>
   )
 }
@@ -976,9 +1117,19 @@ export function apply(ctx: ClientContext): void {
   // the first paint.)
   ctx.effect(() => {
     const cleanups: Array<() => void> = []
+    /** The resolved input the live mounts were built from. */
+    let mounted: ResolvedTweaks | undefined
     const sync = (): void => {
       const value = controller.getSnapshot().value
       const resolved = resolveValue(value)
+      // A settings change that only moves `closedWorkspaces` needs no
+      // re-mount: the workspace-close tweak subscribes to this client and
+      // re-filters in place. Everything else still re-mounts as before.
+      if (mounted !== undefined && sameMountInputs(mounted, resolved)) {
+        mounted = resolved
+        return
+      }
+      mounted = resolved
       // Full remount: simplest + tweak count is small (< 10).
       while (cleanups.length > 0) cleanups.pop()!()
       for (const tweak of TWEAKS) {
@@ -986,7 +1137,7 @@ export function apply(ctx: ClientContext): void {
         if (!enabled) continue
         const injector = TWEAK_INJECTORS[tweak.id]
         if (injector === undefined) continue
-        cleanups.push(injector(ctx, resolved))
+        cleanups.push(injector(ctx, resolved, controller))
       }
       // Layout-section feature with a numeric parameter (like the width axis
       // above): not a registry boolean, so it mounts outside the TWEAKS loop.

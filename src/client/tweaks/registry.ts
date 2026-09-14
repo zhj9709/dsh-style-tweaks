@@ -98,4 +98,11 @@ export const TWEAKS: readonly TweakDescriptor[] = [
     titleKey: 'tweak.turnSpeedMetrics.title',
     descriptionKey: 'tweak.turnSpeedMetrics.description',
   },
+  {
+    id: 'workspace-close',
+    settingKey: 'workspaceClose',
+    defaultEnabled: false,
+    titleKey: 'tweak.workspaceClose.title',
+    descriptionKey: 'tweak.workspaceClose.description',
+  },
 ]

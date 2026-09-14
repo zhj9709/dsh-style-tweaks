@@ -178,6 +178,26 @@ export interface StyleTweaksConfig {
    * off: the stock footer keeps its shipped shape.
    */
   turnSpeedMetrics?: boolean
+  /**
+   * Let the user "close" a Workspace — hide it from the sidebar browser and
+   * the New Session picker without deleting anything. Off (default): the
+   * stock list stays complete. On: the Workspace disappears from every
+   * surface that derives from the Host Workspace list, its Sessions are
+   * hidden with it (the derived snapshot merges their ids into the
+   * archived-session set, so they never surface under Ungrouped and the
+   * search derivations stop listing them), and the registry row, its
+   * `sessionIds` account, and the files on disk all stay untouched.
+   * Restoring means re-adding the same folder (the Host resolves it by
+   * canonical path and returns the same id) or using the recovery list in
+   * the Settings panel.
+   */
+  workspaceClose?: boolean
+  /**
+   * Ids of the Workspaces currently closed. Internal data: the Settings
+   * panel renders them as a recovery list, never as an ordinary toggle.
+   * Ids whose Workspace no longer exists in the Host registry are pruned.
+   */
+  closedWorkspaces?: string[]
 }
 
 // ── Column-width constants ───────────────────────────────────────────────
@@ -241,6 +261,13 @@ export const DEFAULT_PILLS_CACHE_HIT_DECIMALS = false
 /** Default: off — the turn footer keeps its shipped shape. */
 export const DEFAULT_TURN_SPEED_METRICS = false
 /**
+ * Default: off — hiding a Workspace is a new capability rather than a fix,
+ * so the stock list stays complete until the user opts in.
+ */
+export const DEFAULT_WORKSPACE_CLOSE = false
+/** No Workspace is closed until the user closes one. */
+export const DEFAULT_CLOSED_WORKSPACES: readonly string[] = []
+/**
  * Default: off — the host keeps its own 45% first-open width until the user
  * opts in, so the plugin never takes over an axis the user did not ask about.
  */
@@ -270,6 +297,8 @@ export const Config: Schema<StyleTweaksConfig> = z.object({
   legacyStatsLine: z.boolean().default(DEFAULT_LEGACY_STATS_LINE),
   pillsCacheHitDecimals: z.boolean().default(DEFAULT_PILLS_CACHE_HIT_DECIMALS),
   turnSpeedMetrics: z.boolean().default(DEFAULT_TURN_SPEED_METRICS),
+  workspaceClose: z.boolean().default(DEFAULT_WORKSPACE_CLOSE),
+  closedWorkspaces: z.array(z.string()).default([...DEFAULT_CLOSED_WORKSPACES]),
   rightbarInitialWidth: z.boolean().default(DEFAULT_RIGHTBAR_INITIAL_WIDTH),
   rightbarWidthPercent: z.number().min(MIN_RIGHTBAR_WIDTH_PERCENT).max(MAX_RIGHTBAR_WIDTH_PERCENT).default(DEFAULT_RIGHTBAR_WIDTH_PERCENT),
 })
@@ -308,6 +337,10 @@ export interface ResolvedStyleTweaksConfig {
   pillsCacheHitDecimals: boolean
   /** Whether the turn-speed-metrics tweak is enabled. */
   turnSpeedMetrics: boolean
+  /** Whether the user can close (hide) Workspaces without deleting them. */
+  workspaceClose: boolean
+  /** Ids of the Workspaces currently closed (hidden but fully retained). */
+  closedWorkspaces: readonly string[]
   /** Whether the plugin owns the right Sidebar's first-open width. */
   rightbarInitialWidth: boolean
   /** Right Sidebar first-open width as a percentage of the session frame. */
@@ -333,6 +366,8 @@ export function resolveConfig(config: StyleTweaksConfig = {}): ResolvedStyleTwea
     legacyStatsLine: config.legacyStatsLine ?? DEFAULT_LEGACY_STATS_LINE,
     pillsCacheHitDecimals: config.pillsCacheHitDecimals ?? DEFAULT_PILLS_CACHE_HIT_DECIMALS,
     turnSpeedMetrics: config.turnSpeedMetrics ?? DEFAULT_TURN_SPEED_METRICS,
+    workspaceClose: config.workspaceClose ?? DEFAULT_WORKSPACE_CLOSE,
+    closedWorkspaces: resolveClosedWorkspaces(config.closedWorkspaces),
     rightbarInitialWidth: config.rightbarInitialWidth ?? DEFAULT_RIGHTBAR_INITIAL_WIDTH,
     rightbarWidthPercent: resolveRightbarPercent(config.rightbarWidthPercent),
   }
@@ -366,4 +401,15 @@ export function resolveRightbarPercent(value: number | undefined): number {
     return Math.min(MAX_RIGHTBAR_WIDTH_PERCENT, Math.max(MIN_RIGHTBAR_WIDTH_PERCENT, Math.round(value)))
   }
   return DEFAULT_RIGHTBAR_WIDTH_PERCENT
+}
+
+/**
+ * Normalize the closed-Workspace id list. Non-string and empty entries are
+ * dropped so a hand-edited settings document cannot leak a non-string into
+ * the id comparison; an empty result reuses the shared default array.
+ */
+export function resolveClosedWorkspaces(value: readonly string[] | undefined): readonly string[] {
+  if (!Array.isArray(value)) return DEFAULT_CLOSED_WORKSPACES
+  const ids = value.filter((id): id is string => typeof id === 'string' && id !== '')
+  return ids.length === 0 ? DEFAULT_CLOSED_WORKSPACES : ids
 }

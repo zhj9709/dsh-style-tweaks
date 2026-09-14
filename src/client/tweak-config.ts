@@ -60,6 +60,10 @@ export const DEFAULT_LEGACY_STATS_LINE = false
 export const DEFAULT_PILLS_CACHE_HIT_DECIMALS = false
 /** Default state of the turn-speed-metrics tweak (off: the stock footer keeps its shipped shape). */
 export const DEFAULT_TURN_SPEED_METRICS = false
+/** Default state of the workspace-close tweak (off: the stock Workspace list stays complete). */
+export const DEFAULT_WORKSPACE_CLOSE = false
+/** No Workspace is closed until the user closes one. */
+export const DEFAULT_CLOSED_WORKSPACES: readonly string[] = []
 /** Default state of the right-Sidebar initial-width tweak (off: the host keeps its own 45%). */
 export const DEFAULT_RIGHTBAR_INITIAL_WIDTH = false
 /** Default right Sidebar first-open width percentage (equals the host's 45%). */
@@ -112,6 +116,16 @@ export function resolveRightbarPercent(value: number | undefined): number {
 }
 
 /**
+ * Normalize the closed-Workspace id list: keep non-empty strings only.
+ * Must match `resolveClosedWorkspaces` in src/config.ts.
+ */
+export function resolveClosedWorkspaces(value: readonly string[] | undefined): readonly string[] {
+  if (!Array.isArray(value)) return DEFAULT_CLOSED_WORKSPACES
+  const ids = value.filter((id): id is string => typeof id === 'string' && id !== '')
+  return ids.length === 0 ? DEFAULT_CLOSED_WORKSPACES : ids
+}
+
+/**
  * Build a fully-defaulted ResolvedStyleTweaksConfig from any
  * partial input. Mirror of `resolveConfig` in src/config.ts.
  */
@@ -135,6 +149,8 @@ export function resolveClientConfig(
     legacyStatsLine: value?.legacyStatsLine ?? DEFAULT_LEGACY_STATS_LINE,
     pillsCacheHitDecimals: value?.pillsCacheHitDecimals ?? DEFAULT_PILLS_CACHE_HIT_DECIMALS,
     turnSpeedMetrics: value?.turnSpeedMetrics ?? DEFAULT_TURN_SPEED_METRICS,
+    workspaceClose: value?.workspaceClose ?? DEFAULT_WORKSPACE_CLOSE,
+    closedWorkspaces: resolveClosedWorkspaces(value?.closedWorkspaces),
     rightbarInitialWidth: value?.rightbarInitialWidth ?? DEFAULT_RIGHTBAR_INITIAL_WIDTH,
     rightbarWidthPercent: resolveRightbarPercent(value?.rightbarWidthPercent),
   }

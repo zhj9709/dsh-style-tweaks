@@ -1,7 +1,7 @@
 {
   "name": "dsh-style-tweaks",
   "version": "0.1.3",
-  "description": "DSH plugin: collection of opt-in style tweaks for DSH's UI — precise conversation column-width control (px stepper, presets, plugin-vs-native toggle, side margin), a configurable first-open width for the right Sidebar as a percentage of the session frame, plus small fixes for the sidebar and the settings panel. Each setting has its own toggle in Settings.",
+  "description": "DSH plugin: collection of opt-in style tweaks for DSH's UI — precise conversation column-width control (px stepper, presets, plugin-vs-native toggle, side margin), a configurable first-open width for the right Sidebar as a percentage of the session frame, a way to close (hide) a Workspace without deleting it, plus small fixes for the sidebar and the settings panel. Each setting has its own toggle in Settings.",
   "keywords": [
     "dsh",
     "deepseek",
@@ -15,6 +15,7 @@
     "layout",
     "css",
     "column-width",
+    "workspace",
     "responsive"
   ],
   "type": "module",
