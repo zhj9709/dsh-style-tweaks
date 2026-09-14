@@ -170,7 +170,16 @@ export class StyleTweaksWebBackend {
       }
       json(res, 200, { ok: true, value: this.snapshot() })
     } catch (error) {
+      // The Host bundle and this plugin may each resolve their own copy of
+      // `@deepseek-ai/dsh-settings` (package duplication): a cross-copy
+      // `instanceof` is always false, so a plain revision conflict used to
+      // fall through as 400 `settings-rejected` — and conflict-aware
+      // clients (HTTP 409 = "re-read and retry") never recovered, leaving a
+      // page whose revision went stale failing every save until reload.
+      // The Host's conflict class carries `name`, which survives copy
+      // duplication, so accept either identity.
       const conflict = error instanceof SettingsConflictError
+        || (error instanceof Error && error.name === 'SettingsConflictError')
       requestError(
         res,
         conflict ? 409 : 400,
