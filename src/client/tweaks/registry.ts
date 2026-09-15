@@ -24,7 +24,8 @@ export const TWEAKS: readonly TweakDescriptor[] = [
   {
     id: 'stable-table',
     settingKey: 'stableTable',
-    defaultEnabled: true,
+    // Off: DSH 0.1.6-alpha.1 fixed the hover reflow upstream.
+    defaultEnabled: false,
     titleKey: 'tweak.stableTable.title',
     descriptionKey: 'tweak.stableTable.description',
   },

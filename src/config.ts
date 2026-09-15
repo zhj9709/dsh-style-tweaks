@@ -78,7 +78,9 @@ export interface StyleTweaksConfig {
   /**
    * Lock markdown table layout on hover so the table does not reflow and push
    * surrounding content around. Fixes the "text jumps when I hover a table"
-   * layout-shift bug reported against the stock conversation view.
+   * layout-shift bug reported against the stock conversation view. Only
+   * needed on hosts older than DSH 0.1.6-alpha.1, which fixed the bug
+   * upstream; off by default.
    */
   stableTable?: boolean
   /**
@@ -232,8 +234,11 @@ export const MAX_THINK_HEIGHT = 1200
 export const CONVERSATION_WIDTH_STORAGE_KEY = 'dsh.conversation.contentWidth'
 
 // ── CSS tweak constants ─────────────────────────────────────────────────
-/** Default: every shipped tweak is on. */
-export const DEFAULT_STABLE_TABLE = true
+/**
+ * Default: off — DSH 0.1.6-alpha.1 fixed the hover reflow upstream, so the
+ * tweak is only needed on older hosts.
+ */
+export const DEFAULT_STABLE_TABLE = false
 /** Default: every shipped tweak is on. */
 export const DEFAULT_STABLE_TURN_RAIL = true
 /**

@@ -1,44 +1,41 @@
 /**
  * dsh-style-tweaks — stable-table tweak.
  *
- * Locks markdown-table layout on hover so surrounding content does not
- * reflow ("text jumps when I hover a table").
+ * Backport of DSH 0.1.6-alpha.1's upstream fix for the "text jumps when I
+ * hover a table" bug (PR #4133, commit 55a17d2e57, MarkdownText.module.css):
+ * on hover the wide-table wrapper goes `overflow-x: auto` + `padding-bottom:
+ * 0`, and on a table that fits (`auto` paints no scrollbar) removing the
+ * padding shrinks the wrapper by ~8 px and shoves every sibling below it.
+ * Upstream fixed this by switching the hover value to `scroll`, whose
+ * reserved scrollbar slot exactly replaces the removed padding.
  *
- * DSH web renders markdown tables inside a `.md-table-wide` scroll wrapper.
- * On hover, DSH's own stylesheet sets `padding-bottom: 0` on that wrapper
- * to expand the scroll viewport — but the resulting height delta (~8 px)
- * pushes every sibling below the table, which is the user-visible "jump".
- * DSH does not change the inner cells' geometry on hover.
- *
- * Diagnosed against DSH's own stylesheet (verified in a live browser):
- *   ._tableScroll_*.md-table-wide:hover { padding-bottom: 0; }
- *
- * Fix: pin the wrapper's padding-bottom to its base value (8 px) across
- * base + hover + focus-visible states, so the table's outer height never
- * changes. As belt-and-braces, also suppress non-background transitions in
- * case future DSH versions add inner-cell hover effects.
+ * This tweak applies exactly that switch, so it works on both generations:
+ * on hosts < 0.1.6-alpha.1 it upgrades their `auto` to `scroll` and fixes the
+ * jump; on 0.1.6-alpha.1+ it duplicates the upstream rule and is a no-op
+ * (forcing `auto`-era padding pinning here instead would *add* the scrollbar
+ * slot on top of the upstream `scroll` slot and re-create the jump, 8 px in
+ * the opposite direction). Also suppresses non-background transitions as
+ * belt-and-braces in case future DSH versions add inner-cell hover effects.
  *
  * Selectors use stable hooks only — `.md-table-wide` is a hand-written
  * class DSH reserves for plugins/extensions; CSS Modules-generated names
  * like `_tableScroll_177e0_174` are intentionally avoided.
  */
 const STABLE_TABLE_CSS = `
-/* Pin the wrapper's padding-bottom to its base value across every state, so
- * the wrapper's height never changes on hover. 8 px is the DSH baseline
- * (verified in a live browser via getComputedStyle on .md-table-wide).
+/* Force the upstream-fixed hover behavior: 'scroll' reserves the scrollbar
+ * slot even when the table fits, so on hover that slot exactly replaces the
+ * padding DSH removes and the wrapper's outer height never changes. On hosts
+ * that already ship this rule (0.1.6-alpha.1+) this is a harmless duplicate.
  *
  * Specificity note: DSH's own rule is something like
- *   .[css-modules].md-table-wide:hover, ...:focus-visible { padding-bottom: 0 }
+ *   .[css-modules].md-table-wide:hover, ...:focus-visible { overflow-x: ... }
  * which has specificity (0, 0, 3, 0). A plain .md-table-wide:hover would only
  * be (0, 0, 2, 0), so even with !important DSH wins on the specificity
  * tiebreak. We double-up the .md-table-wide class to match (and exceed) DSH's
  * specificity. */
-.md-table-wide,
 .md-table-wide.md-table-wide:hover,
-.md-table-wide.md-table-wide:focus,
-.md-table-wide.md-table-wide:focus-visible,
-.md-table-wide.md-table-wide:focus-within {
-  padding-bottom: 8px !important;
+.md-table-wide.md-table-wide:focus-visible {
+  overflow-x: scroll !important;
 }
 
 /* Belt-and-braces: no animated transitions on geometry properties — even

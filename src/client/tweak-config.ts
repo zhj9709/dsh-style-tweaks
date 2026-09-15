@@ -38,8 +38,8 @@ export const MAX_THINK_HEIGHT = 1200
 export const CONVERSATION_WIDTH_STORAGE_KEY = 'dsh.conversation.contentWidth'
 
 // ── CSS tweak constants (mirror src/config.ts) ──────────────────────────
-/** Default state of the stable-table tweak. */
-export const DEFAULT_STABLE_TABLE = true
+/** Default state of the stable-table tweak (off: fixed upstream in DSH 0.1.6-alpha.1). */
+export const DEFAULT_STABLE_TABLE = false
 /** Default state of the stable-turn-rail tweak. */
 export const DEFAULT_STABLE_TURN_RAIL = true
 /** Default state of the keep-turn-rail tweak (off: the host's 900px container query stands). */
