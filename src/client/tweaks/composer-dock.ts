@@ -24,10 +24,23 @@ export const DOCK_LEGACY_ATTR = 'data-cst-dock-legacy'
  * Probe the row's layout parent and gate the legacy skin attribute
  * accordingly. Runs from a layout effect, so the attribute lands before the
  * first paint and the skin never flashes.
+ *
+ * The slot machinery renders its cell's output through a `display: contents`
+ * wrapper on every host, so `parentElement` itself generates no box and its
+ * `flexDirection` computes to the initial `row` regardless of the layout —
+ * reading it directly would classify both dock generations as row-flex
+ * (which alpha.2 "passed" by coincidence and alpha.1 failed). The probe
+ * therefore walks up past every `display: contents` ancestor and reads the
+ * flex direction of the first ancestor that actually lays the row out:
+ * InputBar's column-flex root on pre-alpha.2 hosts, the row-flex `.dock`
+ * wrapper on alpha.2+.
  */
 export function probeComposerDockLayout(el: HTMLElement | null): void {
   if (el === null) return
-  const parent = el.parentElement
-  const legacy = parent !== null && getComputedStyle(parent).flexDirection === 'column'
+  let node = el.parentElement
+  while (node !== null && getComputedStyle(node).display === 'contents') {
+    node = node.parentElement
+  }
+  const legacy = node !== null && getComputedStyle(node).flexDirection === 'column'
   el.toggleAttribute(DOCK_LEGACY_ATTR, legacy)
 }
