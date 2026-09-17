@@ -37,6 +37,15 @@ export const TWEAKS: readonly TweakDescriptor[] = [
     descriptionKey: 'tweak.stableTurnRail.description',
   },
   {
+    id: 'stable-session-title',
+    settingKey: 'stableSessionTitle',
+    // Off: the hover reveal is 0.1.6-alpha.2's shipped affordance; opting
+    // back into the pre-alpha.1 always-ellipsis resting title is opt-in.
+    defaultEnabled: false,
+    titleKey: 'tweak.stableSessionTitle.title',
+    descriptionKey: 'tweak.stableSessionTitle.description',
+  },
+  {
     id: 'keep-turn-rail',
     settingKey: 'keepTurnRail',
     defaultEnabled: false,

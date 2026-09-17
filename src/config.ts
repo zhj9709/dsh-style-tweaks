@@ -92,6 +92,15 @@ export interface StyleTweaksConfig {
    */
   stableTurnRail?: boolean
   /**
+   * Restore the session-row title behaviour shipped through DSH
+   * 0.1.6-alpha.1: an overlong title keeps its ellipsis and never moves.
+   * 0.1.6-alpha.2 added a hover reveal (the clipping title smoothly scrolls
+   * to its end while the row is hovered, and drops the ellipsis); this
+   * tweak makes the title element non-scrollable again and keeps the
+   * ellipsis on hover. Off (default): the hover reveal stays.
+   */
+  stableSessionTitle?: boolean
+  /**
    * Keep DSH's turn-navigation rail visible after the right Sidebar is
    * widened far enough to hide it. The host's `TurnNavigator.module.css`
    * hides the rail with `@container (max-width:900px)` measured against the
@@ -250,6 +259,11 @@ export const DEFAULT_STABLE_TABLE = false
 /** Default: every shipped tweak is on. */
 export const DEFAULT_STABLE_TURN_RAIL = true
 /**
+ * Default: off — the hover title reveal is 0.1.6-alpha.2's shipped
+ * affordance; restoring the pre-alpha.1 resting title is opt-in.
+ */
+export const DEFAULT_STABLE_SESSION_TITLE = false
+/**
  * Default: off — the host's own 900px container query stands until the user
  * opts into keeping the rail at every chat width.
  */
@@ -306,6 +320,7 @@ export const Config: Schema<StyleTweaksConfig> = z.object({
   thinkHeight: z.number().min(MIN_THINK_HEIGHT).max(MAX_THINK_HEIGHT).default(DEFAULT_THINK_HEIGHT),
   stableTable: z.boolean().default(DEFAULT_STABLE_TABLE),
   stableTurnRail: z.boolean().default(DEFAULT_STABLE_TURN_RAIL),
+  stableSessionTitle: z.boolean().default(DEFAULT_STABLE_SESSION_TITLE),
   keepTurnRail: z.boolean().default(DEFAULT_KEEP_TURN_RAIL),
   codeBlockFlushTop: z.boolean().default(DEFAULT_CODE_BLOCK_FLUSH_TOP),
   projectRunningIndicator: z.boolean().default(DEFAULT_PROJECT_RUNNING_INDICATOR),
@@ -338,6 +353,8 @@ export interface ResolvedStyleTweaksConfig {
   stableTable: boolean
   /** Whether the stable-turn-rail tweak is enabled. */
   stableTurnRail: boolean
+  /** Whether the session titles stay put with their ellipsis on hover. */
+  stableSessionTitle: boolean
   /** Whether the keep-turn-rail tweak is enabled. */
   keepTurnRail: boolean
   /** Whether the code-block-flush-top tweak is enabled. */
@@ -378,6 +395,7 @@ export function resolveConfig(config: StyleTweaksConfig = {}): ResolvedStyleTwea
     thinkHeight: resolveThinkHeight(config.thinkHeight),
     stableTable: config.stableTable ?? DEFAULT_STABLE_TABLE,
     stableTurnRail: config.stableTurnRail ?? DEFAULT_STABLE_TURN_RAIL,
+    stableSessionTitle: config.stableSessionTitle ?? DEFAULT_STABLE_SESSION_TITLE,
     keepTurnRail: config.keepTurnRail ?? DEFAULT_KEEP_TURN_RAIL,
     codeBlockFlushTop: config.codeBlockFlushTop ?? DEFAULT_CODE_BLOCK_FLUSH_TOP,
     projectRunningIndicator: config.projectRunningIndicator ?? DEFAULT_PROJECT_RUNNING_INDICATOR,

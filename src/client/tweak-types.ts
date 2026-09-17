@@ -25,6 +25,8 @@ export interface ResolvedStyleTweaksConfig {
   stableTable: boolean
   /** Whether the stable-turn-rail tweak is enabled. */
   stableTurnRail: boolean
+  /** Whether the session titles stay put with their ellipsis on hover. */
+  stableSessionTitle: boolean
   /** Whether the keep-turn-rail tweak is enabled. */
   keepTurnRail: boolean
   /** Whether the code-block-flush-top tweak is enabled. */

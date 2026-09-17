@@ -42,6 +42,7 @@ import {
 } from './tweak-config.ts'
 import { TWEAKS, type TweakDescriptor } from './tweaks/registry.ts'
 import { injectStableTableStyles } from './tweaks/stable-table.ts'
+import { injectStableSessionTitleStyles } from './tweaks/stable-session-title.ts'
 import { injectStableTurnRailStyles } from './tweaks/stable-turn-rail.ts'
 import { injectKeepTurnRailStyles } from './tweaks/keep-turn-rail.ts'
 import { injectCodeBlockFlushTopStyles } from './tweaks/code-block-flush-top.ts'
@@ -71,6 +72,7 @@ const SETTINGS_ROUTE = '/_dsh/style-tweaks/settings'
 const TWEAK_INJECTORS: Record<string, (ctx: ClientContext, resolved: ResolvedTweaks, settings: SettingsClient) => () => void> = {
   'stable-table': () => injectStableTableStyles(),
   'stable-turn-rail': () => injectStableTurnRailStyles(),
+  'stable-session-title': () => injectStableSessionTitleStyles(),
   'keep-turn-rail': () => injectKeepTurnRailStyles(),
   'code-block-flush-top': () => injectCodeBlockFlushTopStyles(),
   'project-running-indicator': setupProjectRunningIndicator,
@@ -101,6 +103,8 @@ interface TweaksValue {
   stableTable?: boolean
   /** Whether the stable-turn-rail tweak is enabled. */
   stableTurnRail?: boolean
+  /** Whether the session titles stay put with their ellipsis on hover. */
+  stableSessionTitle?: boolean
   /** Whether the keep-turn-rail tweak is enabled. */
   keepTurnRail?: boolean
   /** Whether the code-block-flush-top tweak is enabled. */
@@ -139,6 +143,7 @@ interface ResolvedTweaks {
   thinkHeight: number
   stableTable: boolean
   stableTurnRail: boolean
+  stableSessionTitle: boolean
   keepTurnRail: boolean
   codeBlockFlushTop: boolean
   projectRunningIndicator: boolean
@@ -217,6 +222,8 @@ const en = {
   'tweak.stableTable.description': 'Backport of the DSH 0.1.6-alpha.1 fix: on hover the reserved scrollbar slot exactly replaces the removed padding, so surrounding content does not reflow ("text jumps when I hover a table"). Only needed on hosts older than 0.1.6-alpha.1; a harmless duplicate on newer hosts. Off by default.',
   'tweak.stableTurnRail.title': 'Stable turn-navigation rail',
   'tweak.stableTurnRail.description': 'Keep the turn-navigation rail at a stable position when scrolling up past the first message into the system prompt ("the rail jumps down by ~16 px when I scroll up after clicking the first turn").',
+  'tweak.stableSessionTitle.title': 'Stable session titles',
+  'tweak.stableSessionTitle.description': 'Restores the pre-0.1.6-alpha.2 session rows: a title too long for its row keeps its ellipsis and never moves — the hover state no longer smoothly slides it to reveal the clipped tail. The row\'s hover card (hover a moment) still shows the full title.',
   'tweak.keepTurnRail.title': 'Always show turn navigation',
   'tweak.keepTurnRail.description': 'DSH hides the turn-navigation rail once the chat column\'s content box reaches 900 px (a container query in TurnNavigator.module.css) — which is what widening the right sidebar does, since the center column may be squeezed down to 400 px. This keeps the rail at every chat width. At narrow widths the rail sits in the scrollport\'s right gutter and its hover preview covers part of the transcript.',
   'tweak.codeBlockFlushTop.title': 'Flush code-block top',
@@ -320,6 +327,8 @@ const zh: Record<LocaleKey, string> = {
   'tweak.stableTable.description': '回移 DSH 0.1.6-alpha.1 的官方修复：hover 时预留的滚动条槽位正好顶掉被移除的 padding，避免周围内容发生回流（"鼠标移到表格上时下方文本会跳动"）。仅需旧版 host 开启，新版上开启只是无害的重复规则。默认关闭。',
   'tweak.stableTurnRail.title': '轮次导航栏稳定',
   'tweak.stableTurnRail.description': '向上滚动到第一条消息上方的系统提示词区域时，让右侧轮次导航栏保持在原位（不再下移约 16 像素）。',
+  'tweak.stableSessionTitle.title': '会话标题悬停稳定',
+  'tweak.stableSessionTitle.description': '0.1.6-alpha.2 起，悬停会话行时超宽的标题会平滑滑动到末尾、亮出被裁剪的部分，移开又弹回。开启本项恢复 0.1.6-alpha.2 之前的行为：标题保持原位、始终显示省略号；停顿悬停出现的信息卡片仍会展示完整标题。',
   'tweak.keepTurnRail.title': '轮次导航常显',
   'tweak.keepTurnRail.description': 'DSH 会在聊天列内容盒宽度降到 900 px 时隐藏轮次导航栏（TurnNavigator.module.css 的容器查询）——把右侧边栏拉宽就会触发，中间列最多可被压到 400 px。开启后任何聊天宽度下都保留轮次导航。窄宽度下导航停在滚动区右侧的空隙里，悬停预览会遮住部分正文。',
   'tweak.codeBlockFlushTop.title': '代码块顶部贴齐',
@@ -402,6 +411,7 @@ function resolveValue(value: TweaksValue | undefined): ResolvedTweaks {
     thinkHeight: resolveThinkHeight(value?.thinkHeight),
     stableTable: value?.stableTable ?? false,
     stableTurnRail: value?.stableTurnRail ?? true,
+    stableSessionTitle: value?.stableSessionTitle ?? false,
     keepTurnRail: value?.keepTurnRail ?? false,
     codeBlockFlushTop: value?.codeBlockFlushTop ?? true,
     projectRunningIndicator: value?.projectRunningIndicator ?? true,
