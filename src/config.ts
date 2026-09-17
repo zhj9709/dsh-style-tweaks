@@ -170,6 +170,14 @@ export interface StyleTweaksConfig {
    */
   pillsCacheHitDecimals?: boolean
   /**
+   * Suppress the context capsule's hover info bubble (host 0.1.6-alpha.2+):
+   * hovering the ContextMeter pill under the composer no longer floats the
+   * "上下文已用 13%" tooltip. The pill's hover highlight and its click-open
+   * breakdown dialog are untouched; hosts without the ContextMeter leave
+   * the tweak inert. Off (default): the shipped tooltip stays.
+   */
+  contextPillNoTooltip?: boolean
+  /**
    * Rebuild the turn footer's 输出速度 (TPS) and 首 token 用时 (TTFT) — the
    * two "本轮用时和速度" figures session format v2 (0.1.5) dropped from cold
    * presentation: the Chat UI no longer replays the model stream embedded in
@@ -266,6 +274,11 @@ export const DEFAULT_PILLS_CACHE_HIT_DECIMALS = false
 /** Default: off — the turn footer keeps its shipped shape. */
 export const DEFAULT_TURN_SPEED_METRICS = false
 /**
+ * Default: off — the context capsule keeps its shipped hover tooltip until
+ * the user opts into hiding it.
+ */
+export const DEFAULT_CONTEXT_PILL_NO_TOOLTIP = false
+/**
  * Default: off — hiding a Workspace is a new capability rather than a fix,
  * so the stock list stays complete until the user opts in.
  */
@@ -302,6 +315,7 @@ export const Config: Schema<StyleTweaksConfig> = z.object({
   legacyStatsLine: z.boolean().default(DEFAULT_LEGACY_STATS_LINE),
   pillsCacheHitDecimals: z.boolean().default(DEFAULT_PILLS_CACHE_HIT_DECIMALS),
   turnSpeedMetrics: z.boolean().default(DEFAULT_TURN_SPEED_METRICS),
+  contextPillNoTooltip: z.boolean().default(DEFAULT_CONTEXT_PILL_NO_TOOLTIP),
   workspaceClose: z.boolean().default(DEFAULT_WORKSPACE_CLOSE),
   closedWorkspaces: z.array(z.string()).default([...DEFAULT_CLOSED_WORKSPACES]),
   rightbarInitialWidth: z.boolean().default(DEFAULT_RIGHTBAR_INITIAL_WIDTH),
@@ -342,6 +356,8 @@ export interface ResolvedStyleTweaksConfig {
   pillsCacheHitDecimals: boolean
   /** Whether the turn-speed-metrics tweak is enabled. */
   turnSpeedMetrics: boolean
+  /** Whether the context capsule's hover tooltip is suppressed. */
+  contextPillNoTooltip: boolean
   /** Whether the user can close (hide) Workspaces without deleting them. */
   workspaceClose: boolean
   /** Ids of the Workspaces currently closed (hidden but fully retained). */
@@ -371,6 +387,7 @@ export function resolveConfig(config: StyleTweaksConfig = {}): ResolvedStyleTwea
     legacyStatsLine: config.legacyStatsLine ?? DEFAULT_LEGACY_STATS_LINE,
     pillsCacheHitDecimals: config.pillsCacheHitDecimals ?? DEFAULT_PILLS_CACHE_HIT_DECIMALS,
     turnSpeedMetrics: config.turnSpeedMetrics ?? DEFAULT_TURN_SPEED_METRICS,
+    contextPillNoTooltip: config.contextPillNoTooltip ?? DEFAULT_CONTEXT_PILL_NO_TOOLTIP,
     workspaceClose: config.workspaceClose ?? DEFAULT_WORKSPACE_CLOSE,
     closedWorkspaces: resolveClosedWorkspaces(config.closedWorkspaces),
     rightbarInitialWidth: config.rightbarInitialWidth ?? DEFAULT_RIGHTBAR_INITIAL_WIDTH,

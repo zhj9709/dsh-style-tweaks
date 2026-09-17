@@ -43,6 +43,8 @@ export interface ResolvedStyleTweaksConfig {
   pillsCacheHitDecimals: boolean
   /** Whether the turn-speed-metrics tweak is enabled. */
   turnSpeedMetrics: boolean
+  /** Whether the context capsule's hover tooltip is suppressed. */
+  contextPillNoTooltip: boolean
   /** Whether the user can close (hide) Workspaces without deleting them. */
   workspaceClose: boolean
   /** Ids of the Workspaces currently closed (hidden but fully retained). */

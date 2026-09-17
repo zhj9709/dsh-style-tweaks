@@ -60,6 +60,8 @@ export const DEFAULT_LEGACY_STATS_LINE = false
 export const DEFAULT_PILLS_CACHE_HIT_DECIMALS = false
 /** Default state of the turn-speed-metrics tweak (off: the stock footer keeps its shipped shape). */
 export const DEFAULT_TURN_SPEED_METRICS = false
+/** Default state of the context-pill-no-tooltip tweak (off: the shipped tooltip stays). */
+export const DEFAULT_CONTEXT_PILL_NO_TOOLTIP = false
 /** Default state of the workspace-close tweak (off: the stock Workspace list stays complete). */
 export const DEFAULT_WORKSPACE_CLOSE = false
 /** No Workspace is closed until the user closes one. */
@@ -149,6 +151,7 @@ export function resolveClientConfig(
     legacyStatsLine: value?.legacyStatsLine ?? DEFAULT_LEGACY_STATS_LINE,
     pillsCacheHitDecimals: value?.pillsCacheHitDecimals ?? DEFAULT_PILLS_CACHE_HIT_DECIMALS,
     turnSpeedMetrics: value?.turnSpeedMetrics ?? DEFAULT_TURN_SPEED_METRICS,
+    contextPillNoTooltip: value?.contextPillNoTooltip ?? DEFAULT_CONTEXT_PILL_NO_TOOLTIP,
     workspaceClose: value?.workspaceClose ?? DEFAULT_WORKSPACE_CLOSE,
     closedWorkspaces: resolveClosedWorkspaces(value?.closedWorkspaces),
     rightbarInitialWidth: value?.rightbarInitialWidth ?? DEFAULT_RIGHTBAR_INITIAL_WIDTH,

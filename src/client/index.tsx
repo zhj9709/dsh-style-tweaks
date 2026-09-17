@@ -54,6 +54,7 @@ import { installRightbarInitialWidth } from './tweaks/rightbar-initial-width.ts'
 import { setupLegacyStatsLine } from './tweaks/legacy-stats-line.tsx'
 import { setupPillsCacheHitDecimals } from './tweaks/pills-cache-hit-decimals.tsx'
 import { setupTurnSpeedMetrics } from './tweaks/turn-speed-metrics.tsx'
+import { injectContextPillNoTooltipStyles } from './tweaks/context-pill-no-tooltip.ts'
 import { closedWorkspaceEntries, restoreClosedWorkspace, setupWorkspaceClose } from './tweaks/workspace-close.ts'
 
 const NS = 'style-tweaks'
@@ -79,6 +80,7 @@ const TWEAK_INJECTORS: Record<string, (ctx: ClientContext, resolved: ResolvedTwe
   'legacy-stats-line': (ctx, resolved) => setupLegacyStatsLine(ctx, resolved.pillsCacheHitDecimals),
   'pills-cache-hit-decimals': setupPillsCacheHitDecimals,
   'turn-speed-metrics': setupTurnSpeedMetrics,
+  'context-pill-no-tooltip': () => injectContextPillNoTooltipStyles(),
   'workspace-close': (ctx, resolved, settings) => setupWorkspaceClose(ctx, resolved, settings),
 }
 
@@ -117,6 +119,8 @@ interface TweaksValue {
   pillsCacheHitDecimals?: boolean
   /** Whether the turn-speed-metrics tweak is enabled. */
   turnSpeedMetrics?: boolean
+  /** Whether the context capsule's hover tooltip is suppressed. */
+  contextPillNoTooltip?: boolean
   /** Whether the user can close (hide) Workspaces without deleting them. */
   workspaceClose?: boolean
   /** Ids of the Workspaces currently closed (internal data, recovery list only). */
@@ -144,6 +148,7 @@ interface ResolvedTweaks {
   legacyStatsLine: boolean
   pillsCacheHitDecimals: boolean
   turnSpeedMetrics: boolean
+  contextPillNoTooltip: boolean
   workspaceClose: boolean
   closedWorkspaces: readonly string[]
   rightbarInitialWidth: boolean
@@ -230,6 +235,8 @@ const en = {
   'tweak.pillsCacheHitDecimals.description': 'Show the composer stats\' cache-hit share with two decimal places (87.35%) instead of integer rounding — applies to the new icon pills and the legacy text line alike, whichever is showing.',
   'tweak.turnSpeedMetrics.title': 'Turn speed & TTFT',
   'tweak.turnSpeedMetrics.description': 'Since 0.1.5, cold sessions no longer rebuild per-token timing, so the turn-time dialog keeps only the wall-clock duration. Refills that dialog with the output speed and TTFT rows (rebuilt from the model stream embedded in the session log) when you click the time pill.',
+  'tweak.contextPillNoTooltip.title': 'No context pill hover info',
+  'tweak.contextPillNoTooltip.description': 'Hovering the context capsule under the input box (DSH 0.1.6-alpha.2+) no longer floats the "13% of context used" tooltip. The capsule\'s hover highlight and its click-open breakdown dialog are untouched; hosts without the capsule leave this inert.',
   'tweak.workspaceClose.title': 'Closable workspaces',
   'tweak.workspaceClose.description': 'Hide a Workspace from the sidebar and the New Session picker without deleting it — its sessions are hidden with it (they never fall into Ungrouped), while the registry entry, the session account and the files on disk are all kept. Restore it by re-adding the same folder, or from the recovery list in this panel.',
   workspaceCloseMenu: 'Close workspace',
@@ -331,6 +338,8 @@ const zh: Record<LocaleKey, string> = {
   'tweak.pillsCacheHitDecimals.description': '缓存命中率按两位小数显示（如 87.35%），不再取整；无论统计信息以新版图标胶囊还是经典文本行展示，均适用。',
   'tweak.turnSpeedMetrics.title': '轮次速度与首 token 用时',
   'tweak.turnSpeedMetrics.description': '0.1.5 起冷会话不再重建逐 token 时序，"本轮用时和速度"弹窗只剩总用时。开启后点击用时胶囊时，弹窗会回填输出速度与首 token 用时两行（由会话日志内嵌的模型流重建，历史会话同样生效）。',
+  'tweak.contextPillNoTooltip.title': '上下文胶囊不显示悬停信息',
+  'tweak.contextPillNoTooltip.description': '鼠标移到输入框下方的上下文胶囊上（0.1.6-alpha.2+ 新增）时，不再浮出"上下文已用 13%"的悬停提示。胶囊自身的悬停高亮与点开的明细弹窗不受影响；没有该胶囊的宿主上本项保持惰性。',
   'tweak.workspaceClose.title': '工作区可关闭',
   'tweak.workspaceClose.description': '把工作区从侧边栏与新建会话选择器中隐藏，而不是删除：其名下会话一并隐藏（不会落入“未分组”，搜索里也不再出现），而注册记录、会话账目与磁盘文件全部保留。重新添加同一文件夹，或使用本面板中的「已关闭的工作区」列表即可恢复显示。',
   workspaceCloseMenu: '关闭工作区',
@@ -402,6 +411,7 @@ function resolveValue(value: TweaksValue | undefined): ResolvedTweaks {
     legacyStatsLine: value?.legacyStatsLine ?? false,
     pillsCacheHitDecimals: value?.pillsCacheHitDecimals ?? false,
     turnSpeedMetrics: value?.turnSpeedMetrics ?? false,
+    contextPillNoTooltip: value?.contextPillNoTooltip ?? false,
     workspaceClose: value?.workspaceClose ?? DEFAULT_WORKSPACE_CLOSE,
     closedWorkspaces: resolveClosedWorkspaces(value?.closedWorkspaces),
     rightbarInitialWidth: value?.rightbarInitialWidth ?? DEFAULT_RIGHTBAR_INITIAL_WIDTH,

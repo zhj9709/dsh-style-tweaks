@@ -100,6 +100,13 @@ export const TWEAKS: readonly TweakDescriptor[] = [
     descriptionKey: 'tweak.turnSpeedMetrics.description',
   },
   {
+    id: 'context-pill-no-tooltip',
+    settingKey: 'contextPillNoTooltip',
+    defaultEnabled: false,
+    titleKey: 'tweak.contextPillNoTooltip.title',
+    descriptionKey: 'tweak.contextPillNoTooltip.description',
+  },
+  {
     id: 'workspace-close',
     settingKey: 'workspaceClose',
     defaultEnabled: false,
