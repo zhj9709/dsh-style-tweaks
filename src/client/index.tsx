@@ -56,6 +56,7 @@ import { setupLegacyStatsLine } from './tweaks/legacy-stats-line.tsx'
 import { setupPillsCacheHitDecimals } from './tweaks/pills-cache-hit-decimals.tsx'
 import { setupTurnSpeedMetrics } from './tweaks/turn-speed-metrics.tsx'
 import { injectContextPillNoTooltipStyles } from './tweaks/context-pill-no-tooltip.ts'
+import { setupLegacyContextMeter } from './tweaks/legacy-context-meter.tsx'
 import { closedWorkspaceEntries, restoreClosedWorkspace, setupWorkspaceClose } from './tweaks/workspace-close.ts'
 
 const NS = 'style-tweaks'
@@ -83,6 +84,7 @@ const TWEAK_INJECTORS: Record<string, (ctx: ClientContext, resolved: ResolvedTwe
   'pills-cache-hit-decimals': setupPillsCacheHitDecimals,
   'turn-speed-metrics': setupTurnSpeedMetrics,
   'context-pill-no-tooltip': () => injectContextPillNoTooltipStyles(),
+  'legacy-context-meter': setupLegacyContextMeter,
   'workspace-close': (ctx, resolved, settings) => setupWorkspaceClose(ctx, resolved, settings),
 }
 
@@ -125,6 +127,8 @@ interface TweaksValue {
   turnSpeedMetrics?: boolean
   /** Whether the context capsule's hover tooltip is suppressed. */
   contextPillNoTooltip?: boolean
+  /** Whether the pre-alpha.2 context ring is rendered inside the input card. */
+  legacyContextMeter?: boolean
   /** Whether the user can close (hide) Workspaces without deleting them. */
   workspaceClose?: boolean
   /** Ids of the Workspaces currently closed (internal data, recovery list only). */
@@ -154,6 +158,7 @@ interface ResolvedTweaks {
   pillsCacheHitDecimals: boolean
   turnSpeedMetrics: boolean
   contextPillNoTooltip: boolean
+  legacyContextMeter: boolean
   workspaceClose: boolean
   closedWorkspaces: readonly string[]
   rightbarInitialWidth: boolean
@@ -244,6 +249,8 @@ const en = {
   'tweak.turnSpeedMetrics.description': 'Since 0.1.5, cold sessions no longer rebuild per-token timing, so the turn-time dialog keeps only the wall-clock duration. Refills that dialog with the output speed and TTFT rows (rebuilt from the model stream embedded in the session log) when you click the time pill.',
   'tweak.contextPillNoTooltip.title': 'No context pill hover info',
   'tweak.contextPillNoTooltip.description': 'Hovering the context capsule under the input box (DSH 0.1.6-alpha.2+) no longer floats the "13% of context used" tooltip. The capsule\'s hover highlight and its click-open breakdown dialog are untouched; hosts without the capsule leave this inert.',
+  'tweak.legacyContextMeter.title': 'Context ring in the input card',
+  'tweak.legacyContextMeter.description': 'Restores the pre-0.1.6-alpha.2 context meter: a 28px ring button inside the input card\'s toolbar row, left of the send button, instead of the capsule below the card. The hover reading and the click-open context breakdown are kept; the shipped capsule stays hidden while this is on.',
   'tweak.workspaceClose.title': 'Closable workspaces',
   'tweak.workspaceClose.description': 'Hide a Workspace from the sidebar and the New Session picker without deleting it — its sessions are hidden with it (they never fall into Ungrouped), while the registry entry, the session account and the files on disk are all kept. Restore it by re-adding the same folder, or from the recovery list in this panel.',
   workspaceCloseMenu: 'Close workspace',
@@ -286,6 +293,11 @@ const en = {
   'pills.number.groupSeparator': ',',
   'pills.duration.seconds': '{seconds}s',
   'pills.duration.minutes': '{minutes}m{seconds}s',
+  'meter.aria': '{percent} of context used',
+  'meter.used': 'of context used',
+  'meter.system': 'System prompt',
+  'meter.tools': 'Tool definitions',
+  'meter.messages': 'Messages',
 } as const
 
 type LocaleKey = keyof typeof en
@@ -349,6 +361,8 @@ const zh: Record<LocaleKey, string> = {
   'tweak.turnSpeedMetrics.description': '0.1.5 起冷会话不再重建逐 token 时序，"本轮用时和速度"弹窗只剩总用时。开启后点击用时胶囊时，弹窗会回填输出速度与首 token 用时两行（由会话日志内嵌的模型流重建，历史会话同样生效）。',
   'tweak.contextPillNoTooltip.title': '上下文胶囊不显示悬停信息',
   'tweak.contextPillNoTooltip.description': '鼠标移到输入框下方的上下文胶囊上（0.1.6-alpha.2+ 新增）时，不再浮出"上下文已用 13%"的悬停提示。胶囊自身的悬停高亮与点开的明细弹窗不受影响；没有该胶囊的宿主上本项保持惰性。',
+  'tweak.legacyContextMeter.title': '上下文圆环回到输入框内',
+  'tweak.legacyContextMeter.description': '恢复 0.1.6-alpha.2 之前的上下文指示样式：28px 圆环按钮回到输入框工具行的发送键左侧，而不是卡片下方的胶囊。悬停读数与点击展开的占用明细保持不变；开启期间 DSH 自带的胶囊保持隐藏。',
   'tweak.workspaceClose.title': '工作区可关闭',
   'tweak.workspaceClose.description': '把工作区从侧边栏与新建会话选择器中隐藏，而不是删除：其名下会话一并隐藏（不会落入“未分组”，搜索里也不再出现），而注册记录、会话账目与磁盘文件全部保留。重新添加同一文件夹，或使用本面板中的「已关闭的工作区」列表即可恢复显示。',
   workspaceCloseMenu: '关闭工作区',
@@ -391,6 +405,11 @@ const zh: Record<LocaleKey, string> = {
   'pills.number.groupSeparator': ',',
   'pills.duration.seconds': '{seconds}秒',
   'pills.duration.minutes': '{minutes}分{seconds}秒',
+  'meter.aria': '上下文已用 {percent}',
+  'meter.used': '上下文已用',
+  'meter.system': '系统提示词',
+  'meter.tools': '工具定义',
+  'meter.messages': '对话消息',
 }
 
 type Translate = (key: LocaleKey) => string
@@ -422,6 +441,7 @@ function resolveValue(value: TweaksValue | undefined): ResolvedTweaks {
     pillsCacheHitDecimals: value?.pillsCacheHitDecimals ?? false,
     turnSpeedMetrics: value?.turnSpeedMetrics ?? false,
     contextPillNoTooltip: value?.contextPillNoTooltip ?? false,
+    legacyContextMeter: value?.legacyContextMeter ?? false,
     workspaceClose: value?.workspaceClose ?? DEFAULT_WORKSPACE_CLOSE,
     closedWorkspaces: resolveClosedWorkspaces(value?.closedWorkspaces),
     rightbarInitialWidth: value?.rightbarInitialWidth ?? DEFAULT_RIGHTBAR_INITIAL_WIDTH,
@@ -1001,6 +1021,15 @@ function SettingsSection({ controller, t }: SettingsSectionProps) {
         <div className="cst-section-label">{t('sectionTweaks')}</div>
         {TWEAKS.map(tweak => {
           const enabled = (resolved as unknown as Record<string, boolean>)[tweak.settingKey] ?? tweak.defaultEnabled
+          // Dependent rows drop out of the panel entirely while their gate
+          // holds (hidden, never greyed out — the rule the dependent numeric
+          // fields already follow). The stored value is untouched.
+          if (
+            tweak.hiddenWhen !== undefined
+            && (resolved as unknown as Record<string, boolean>)[tweak.hiddenWhen.field] === tweak.hiddenWhen.value
+          ) {
+            return null
+          }
           return (
             <div className="cst-field" key={tweak.id}>
               <div className="cst-field-top">
@@ -1150,7 +1179,9 @@ export function apply(ctx: ClientContext): void {
         return
       }
       mounted = resolved
-      // Full remount: simplest + tweak count is small (< 10).
+      // Full remount: simplest, and the per-tweak mounts are cheap and few
+      // enough that tearing them all down on every settings change stays
+      // imperceptible.
       while (cleanups.length > 0) cleanups.pop()!()
       for (const tweak of TWEAKS) {
         const enabled = (resolved as unknown as Record<string, boolean>)[tweak.settingKey] ?? tweak.defaultEnabled

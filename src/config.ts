@@ -187,6 +187,17 @@ export interface StyleTweaksConfig {
    */
   contextPillNoTooltip?: boolean
   /**
+   * Restore the pre-0.1.6-alpha.2 context meter presentation (host
+   * 0.1.6-alpha.2+): a 28px ring button inside the input card's trailing
+   * toolbar row, left of the send button, instead of the ring-and-percent
+   * capsule in the dock below the card. The port rides the same
+   * `contextPressure` / `contextBreakdown` projections and keeps the hover
+   * reading and the click-open breakdown; the shipped capsule stays hidden
+   * while this is on. Hosts before alpha.2 keep their native ring and leave
+   * the tweak inert. Off (default): the shipped capsule stays.
+   */
+  legacyContextMeter?: boolean
+  /**
    * Rebuild the turn footer's 输出速度 (TPS) and 首 token 用时 (TTFT) — the
    * two "本轮用时和速度" figures session format v2 (0.1.5) dropped from cold
    * presentation: the Chat UI no longer replays the model stream embedded in
@@ -293,6 +304,11 @@ export const DEFAULT_TURN_SPEED_METRICS = false
  */
 export const DEFAULT_CONTEXT_PILL_NO_TOOLTIP = false
 /**
+ * Default: off — the capsule is 0.1.6-alpha.2's shipped presentation; the
+ * pre-alpha.2 in-card ring is opt-in.
+ */
+export const DEFAULT_LEGACY_CONTEXT_METER = false
+/**
  * Default: off — hiding a Workspace is a new capability rather than a fix,
  * so the stock list stays complete until the user opts in.
  */
@@ -331,6 +347,7 @@ export const Config: Schema<StyleTweaksConfig> = z.object({
   pillsCacheHitDecimals: z.boolean().default(DEFAULT_PILLS_CACHE_HIT_DECIMALS),
   turnSpeedMetrics: z.boolean().default(DEFAULT_TURN_SPEED_METRICS),
   contextPillNoTooltip: z.boolean().default(DEFAULT_CONTEXT_PILL_NO_TOOLTIP),
+  legacyContextMeter: z.boolean().default(DEFAULT_LEGACY_CONTEXT_METER),
   workspaceClose: z.boolean().default(DEFAULT_WORKSPACE_CLOSE),
   closedWorkspaces: z.array(z.string()).default([...DEFAULT_CLOSED_WORKSPACES]),
   rightbarInitialWidth: z.boolean().default(DEFAULT_RIGHTBAR_INITIAL_WIDTH),
@@ -375,6 +392,8 @@ export interface ResolvedStyleTweaksConfig {
   turnSpeedMetrics: boolean
   /** Whether the context capsule's hover tooltip is suppressed. */
   contextPillNoTooltip: boolean
+  /** Whether the pre-alpha.2 context ring is rendered inside the input card. */
+  legacyContextMeter: boolean
   /** Whether the user can close (hide) Workspaces without deleting them. */
   workspaceClose: boolean
   /** Ids of the Workspaces currently closed (hidden but fully retained). */
@@ -406,6 +425,7 @@ export function resolveConfig(config: StyleTweaksConfig = {}): ResolvedStyleTwea
     pillsCacheHitDecimals: config.pillsCacheHitDecimals ?? DEFAULT_PILLS_CACHE_HIT_DECIMALS,
     turnSpeedMetrics: config.turnSpeedMetrics ?? DEFAULT_TURN_SPEED_METRICS,
     contextPillNoTooltip: config.contextPillNoTooltip ?? DEFAULT_CONTEXT_PILL_NO_TOOLTIP,
+    legacyContextMeter: config.legacyContextMeter ?? DEFAULT_LEGACY_CONTEXT_METER,
     workspaceClose: config.workspaceClose ?? DEFAULT_WORKSPACE_CLOSE,
     closedWorkspaces: resolveClosedWorkspaces(config.closedWorkspaces),
     rightbarInitialWidth: config.rightbarInitialWidth ?? DEFAULT_RIGHTBAR_INITIAL_WIDTH,

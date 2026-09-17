@@ -17,6 +17,16 @@ export interface TweakDescriptor {
   readonly titleKey: string
   /** i18n key for the one-line description shown next to the toggle. */
   readonly descriptionKey: string
+  /**
+   * Optional Settings-row gate: while the named field holds this value, the
+   * row is not rendered at all (hidden, never greyed out — the same rule the
+   * dependent numeric fields follow). The stored value keeps working: the
+   * live mount still keys off `settingKey`, only the row disappears.
+   */
+  readonly hiddenWhen?: {
+    readonly field: string
+    readonly value: boolean
+  }
 }
 
 /** All tweaks, in display order. Add new entries here. */
@@ -109,11 +119,26 @@ export const TWEAKS: readonly TweakDescriptor[] = [
     descriptionKey: 'tweak.turnSpeedMetrics.description',
   },
   {
+    id: 'legacy-context-meter',
+    settingKey: 'legacyContextMeter',
+    // Off: the capsule is 0.1.6-alpha.2's shipped affordance; the pre-alpha.2
+    // in-card ring is opt-in.
+    defaultEnabled: false,
+    titleKey: 'tweak.legacyContextMeter.title',
+    descriptionKey: 'tweak.legacyContextMeter.description',
+  },
+  {
     id: 'context-pill-no-tooltip',
     settingKey: 'contextPillNoTooltip',
     defaultEnabled: false,
     titleKey: 'tweak.contextPillNoTooltip.title',
     descriptionKey: 'tweak.contextPillNoTooltip.description',
+    // Dependent row: the switch names the capsule, which the legacy ring
+    // replaces (and hides) — with the ring on there is no capsule left to
+    // govern, so the row is hidden. The stored value still applies: it
+    // suppresses the ported ring's hover reading too, and comes back into
+    // view (with that value) the moment the ring is turned off.
+    hiddenWhen: { field: 'legacyContextMeter', value: true },
   },
   {
     id: 'workspace-close',
