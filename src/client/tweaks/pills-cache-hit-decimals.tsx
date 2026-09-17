@@ -31,14 +31,16 @@
  * nothing, like the legacy line. The dialog surface and placement reuse
  * DSH's own primitives (`useAnchoredPosition`, `useDismissOnOutsidePointer`)
  * and the ported `stat-dialog` skin. Copy lives in the plugin namespace
- * (`pills.*` keys). The root keeps the `data-composer-stats` marker so the
- * native composer's bottom-clearance rule engages exactly as it does for
- * the shipped row.
+ * (`pills.*` keys). The root keeps the `data-composer-stats` marker so
+ * pre-0.1.6-alpha.2 hosts' bottom-clearance rule engages exactly as it does
+ * for the shipped row (alpha.2 dropped the rule; the attribute is inert
+ * there). The row skin follows the dock generation the host ships — see
+ * `composer-dock.ts` for the two-skin arrangement.
  *
  * @module dsh-style-tweaks/client/tweaks/pills-cache-hit-decimals
  */
 
-import { memo, useEffect, useRef, useState, type CSSProperties, type ComponentType, type ReactNode, type RefObject } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ComponentType, type ReactNode, type RefObject } from 'react'
 import * as dshPrimitives from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   IconClockOutline16,
@@ -54,6 +56,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-session-stats/client'
 import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { probeComposerDockLayout } from './composer-dock.ts'
 import { billedInputTokens, formatCacheHitPercent } from './stats-cache-hit.ts'
 
 /** The slot machinery's translate seat for the plugin namespace. */
@@ -371,13 +374,18 @@ export const LegacyStatsPills = memo(function LegacyStatsPills({ useProjection, 
   const usage = useProjection('tokenUsage')
   // One exclusive slot for both dialogs: opening either pill closes the other.
   const [openPill, setOpenPill] = useState<'time' | 'usage' | null>(null)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  // Gate the dock-generation skin attribute before first paint (composer-dock.ts).
+  useLayoutEffect(() => {
+    probeComposerDockLayout(rootRef.current)
+  }, [])
   // Gated on actual token activity: a session whose steps all settled without
   // billing (e.g. every request failed) shows its counts without a usage pill.
   const hasTokens = usage !== undefined
     && (billedInputTokens(usage) > 0 || usage.outputTokens > 0)
   if ((stats === undefined || stats.steps === 0) && !hasTokens) return null
   return (
-    <div className="cst-pills-root" data-composer-stats>
+    <div ref={rootRef} className="cst-pills-root" data-composer-stats>
       {stats !== undefined && stats.steps > 0 && (
         <TimePill
           stats={stats}
@@ -404,8 +412,20 @@ export const LegacyStatsPills = memo(function LegacyStatsPills({ useProjection, 
 
 // ── Row + dialog skin (ported from StatsPills.module.css / stat-dialog.module.css) ──
 
+/**
+ * Base rules port the 0.1.6-alpha.2 shipped `.root` verbatim: a content-sized
+ * flex item inside the host's centered dock wrapper (which owns the 4px top
+ * clearance; the composer root's bottom pad is a fixed 4px there), so the
+ * row brings no vertical padding and the dock's height stays at the context
+ * capsule's 22px whatever renders inside. The `[data-cst-dock-legacy]`
+ * branch restores the pre-alpha.2 skin — full-column centered block with a
+ * 4px top pad, riding the host's `.root:has([data-composer-stats])`
+ * bottom-clearance tightening — so toggle-height parity holds on those
+ * hosts exactly as before.
+ */
 const PILLS_CSS = `
-.cst-pills-root{display:flex;justify-content:center;gap:12px;max-width:var(--dsh-chat-content-width,748px);width:100%;margin:0 auto;box-sizing:border-box;padding:4px calc(var(--dsh-composer-side-clearance,16px) + 16px) 0;font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(20px + var(--dsh-content-font-delta-secondary,0px))}
+.cst-pills-root{display:flex;justify-content:center;gap:12px;min-width:0;max-width:100%;box-sizing:border-box;font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(20px + var(--dsh-content-font-delta-secondary,0px))}
+.cst-pills-root[data-cst-dock-legacy]{width:100%;max-width:var(--dsh-chat-content-width,748px);margin:0 auto;padding:4px calc(var(--dsh-composer-side-clearance,16px) + 16px) 0}
 .cst-pills-anchor{display:inline-flex;min-width:0}
 .cst-pills-pill{display:inline-flex;align-items:center;gap:6px;box-sizing:border-box;max-width:100%;padding:1px 8px;border:none;border-radius:24px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-variant-numeric:tabular-nums;line-height:inherit;white-space:nowrap}
 .cst-pills-pill svg{width:14px;height:14px;flex:none}

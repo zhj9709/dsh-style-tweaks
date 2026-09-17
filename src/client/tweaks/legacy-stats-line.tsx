@@ -8,6 +8,9 @@
  * ellipsis and revealing the full line in a hover tooltip. 0.1.5-alpha.1
  * replaced that line with icon pills that open dialogs (`StatsPills`);
  * this tweak mounts the old presentation back on top of the new one.
+ * 0.1.6-alpha.2 then moved the dock output into a centered flex row beside
+ * the new ContextMeter capsule (the context pill); the row skins adapt to
+ * both dock generations at mount time (see `composer-dock.ts`).
  *
  * ## Why slot shadowing
  *
@@ -53,6 +56,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-session-stats/client'
 import type {} from '@deepseek-ai/dsh-token-meter/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { probeComposerDockLayout } from './composer-dock.ts'
 import { billedInputTokens, formatCacheHitPercent } from './stats-cache-hit.ts'
 
 /** The slot machinery's translate seat for the plugin namespace. */
@@ -109,16 +113,24 @@ const StatsRow = memo(function StatsRow({ groups, line }: {
     return () => { observer.disconnect() }
   }, [measure])
   useLayoutEffect(measure, [line, measure])
+  // Which dock the host ships decides the skin: a column-flex parent means
+  // this row hangs directly under the composer card (pre-0.1.6-alpha.2,
+  // where it must self-pad and span the column); a row flex container is
+  // alpha.2's `.dock` wrapper (padded and centered by the host). Gated
+  // before first paint, so the skin never flashes.
+  useLayoutEffect(() => {
+    probeComposerDockLayout(rootRef.current)
+  }, [])
   return (
     <Tooltip label={line} side="top" delayMs={500} disabled={!truncated}>
-      {/* data-composer-stats: the host InputBar tightens its own 8px bottom
-          clearance to 4px around any mounted stats row
+      {/* data-composer-stats: pre-0.1.6-alpha.2 hosts tighten their InputBar's
+          own 8px bottom clearance to 4px around any mounted stats row
           (`.root:has([data-composer-stats])`) — without the marker the
           composer keeps 8px and toggling the tweak shifts the column by 2px.
-          The row pads 2px at the bottom so its total matches the pills row's
-          22px pill box (26px row + 4px host clearance on both sides of the
-          toggle): text sits exactly where 0.1.2 put it, and switching the
-          tweak no longer moves the conversation. */}
+          alpha.2 dropped that rule (its root carries a fixed 4px bottom pad),
+          where the attribute is inert. The row's vertical padding lives in
+          the `[data-cst-dock-legacy]` branch only: the alpha.2 dock wrapper
+          owns the 4px top clearance, and the row must bring none of its own. */}
       <div ref={rootRef} className="cst-legacy-stats" data-composer-stats>
         {groups.map((group, i) => (
           <Fragment key={group}>
@@ -191,14 +203,20 @@ export const LegacyStatsLine = memo(function LegacyStatsLine({
 
 /**
  * Row skin, ported from 0.1.2-rc.1's `StatsLine.module.css`: 13/20 tertiary
- * text under the composer, aligned to the shared message column axis. Two
- * deviations from the verbatim port, both for toggle-height parity with the
- * shipped pills row (see the StatsRow marker comment): the bottom padding is
- * 2px instead of 0, and the token fallbacks keep the row readable if a host
- * build renames a token.
+ * text under the composer. Base rules are the 0.1.6-alpha.2 dock skin — a
+ * content-sized flex item inside the host's centered dock wrapper, which
+ * owns the 4px top clearance and the fixed 4px root bottom pad, so the row
+ * brings no vertical padding and the dock's height stays at the capsule's
+ * 22px whatever renders inside. The `[data-cst-dock-legacy]` branch
+ * restores the pre-alpha.2 skin: a full-column centered block with the row
+ * carrying 4px top + 2px bottom pads so its total matches the pills row's
+ * 22px pill box (26px row + 4px host clearance on both sides of the
+ * toggle). Token fallbacks keep the row readable if a host build renames a
+ * token.
  */
 const LEGACY_STATS_CSS = `
-.cst-legacy-stats{display:block;text-align:center;max-width:var(--dsh-chat-content-width,748px);width:100%;margin:0 auto;box-sizing:border-box;padding:4px calc(var(--dsh-composer-side-clearance,16px) + 16px) 2px;font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(20px + var(--dsh-content-font-delta-secondary,0px));color:var(--dsw-alias-label-tertiary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cst-legacy-stats{display:block;max-width:min(var(--dsh-chat-content-width,748px),100%);min-width:0;box-sizing:border-box;font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(20px + var(--dsh-content-font-delta-secondary,0px));color:var(--dsw-alias-label-tertiary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cst-legacy-stats[data-cst-dock-legacy]{width:100%;margin:0 auto;text-align:center;padding:4px calc(var(--dsh-composer-side-clearance,16px) + 16px) 2px}
 .cst-legacy-stats-sep{color:var(--dsw-alias-separator-primary);margin:0 10px}
 `
 
