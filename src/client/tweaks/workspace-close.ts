@@ -192,6 +192,8 @@ const FIBER_WALK_LIMIT = 32
 const GLOBAL_KEY = '__cst_workspace_close_cleanup__'
 /** Marks a menu as already carrying our injected entry. */
 const MENU_INJECTED_ATTR = 'data-cst-workspace-close'
+/** Viewport gap the host's portal placement keeps on every side (`Menu`'s `MARGIN`). */
+const MENU_VIEWPORT_MARGIN = 12
 
 /** Minimal shape of React's internal fiber node, for the props walk only. */
 interface FiberLike {
@@ -381,6 +383,32 @@ function buildCloseEntry(
     onActivate()
   })
   return { entry, iconHost }
+}
+
+/**
+ * Ask the host to re-place a menu whose height this injection just changed.
+ *
+ * The host's portal placement derives `top` from the anchor rect and clamps it
+ * into `[MARGIN, innerHeight - height - MARGIN]`, but it runs in the open
+ * commit's layout effect — BEFORE this injection lands, because the
+ * MutationObserver that drives us fires in a microtask. It therefore sizes the
+ * card at its pre-injection height, and as it listens only for scroll/resize
+ * (there is no ResizeObserver on the panel) it never re-measures: for a
+ * Workspace row near the viewport bottom the injected row ends up below the
+ * fold (measured: a 128px card left at top 845 in a 945px viewport, its last
+ * row — "删除工作区" — cut off by 28px).
+ *
+ * A window `resize` is the host's own re-place trigger, and going through it
+ * instead of writing `style.top` here is what makes the correction stick: the
+ * coordinates live in the host's React state, so any later re-render would
+ * paint a hand-written style back to the stale value.
+ *
+ * Dispatched only when the card actually overflows — a row with room below is
+ * already placed correctly, and the common case should not broadcast an event.
+ */
+function refitMenuIfOverflowing(menu: Element): void {
+  if (menu.getBoundingClientRect().bottom <= window.innerHeight - MENU_VIEWPORT_MARGIN) return
+  window.dispatchEvent(new Event('resize'))
 }
 
 /**
@@ -751,6 +779,9 @@ export function setupWorkspaceClose(
     // nothing.
     const iconRoot = iconHost === undefined ? undefined : createRoot(iconHost)
     iconRoot?.render(createElement(IconCloseOutline16))
+    // Our row is in the document now, so the card is at its final height: let
+    // the host re-run its own placement against it (see above).
+    refitMenuIfOverflowing(menu)
     injected.add({ entry, iconRoot })
   }
 
