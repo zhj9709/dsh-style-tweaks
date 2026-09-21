@@ -23,23 +23,22 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 import { installConversationWidthStyles } from './conversation-width.ts'
 import { setupSettingsNavIcon } from './settings-nav-icon.ts'
 import {
-  DEFAULT_RIGHTBAR_INITIAL_WIDTH,
-  DEFAULT_THINK_FIXED_HEIGHT,
   DEFAULT_USE_PLUGIN_WIDTH,
-  DEFAULT_WORKSPACE_CLOSE,
   MAX_DIALOG_WIDTH,
+  MAX_HISTORY_PAGE_SIZE,
   MAX_RIGHTBAR_WIDTH_PERCENT,
   MAX_THINK_HEIGHT,
   MIN_DIALOG_WIDTH,
+  MIN_HISTORY_PAGE_SIZE,
   MIN_RIGHTBAR_WIDTH_PERCENT,
   MIN_SIDE_MARGIN,
   MIN_THINK_HEIGHT,
-  resolveClosedWorkspaces,
+  STEP_HISTORY_PAGE_SIZE,
+  resolveClientConfig,
   resolveDialogWidth,
-  resolveRightbarPercent,
   resolveSideMargin,
-  resolveThinkHeight,
 } from './tweak-config.ts'
+import type { ResolvedStyleTweaksConfig } from './tweak-types.ts'
 import { TWEAKS, type TweakDescriptor } from './tweaks/registry.ts'
 import { injectStableTableStyles } from './tweaks/stable-table.ts'
 import { injectStableSessionTitleStyles } from './tweaks/stable-session-title.ts'
@@ -58,6 +57,11 @@ import { setupTurnSpeedMetrics } from './tweaks/turn-speed-metrics.tsx'
 import { injectContextPillNoTooltipStyles } from './tweaks/context-pill-no-tooltip.ts'
 import { setupLegacyContextMeter } from './tweaks/legacy-context-meter.tsx'
 import { closedWorkspaceEntries, restoreClosedWorkspace, setupWorkspaceClose } from './tweaks/workspace-close.ts'
+import {
+  installHistoryPageSizeTransport,
+  resetHistoryPageSizeTargets,
+  setHistoryPageSizeTargets,
+} from './tweaks/history-page-size.ts'
 
 const NS = 'style-tweaks'
 const SETTINGS_ROUTE = '/_dsh/style-tweaks/settings'
@@ -88,82 +92,18 @@ const TWEAK_INJECTORS: Record<string, (ctx: ClientContext, resolved: ResolvedTwe
   'workspace-close': (ctx, resolved, settings) => setupWorkspaceClose(ctx, resolved, settings),
 }
 
-interface TweaksValue {
-  // Column-width control (ported from dsh-dialog-width).
-  /** Dialog width in px; clamped to [600, 1600]. */
-  dialogWidth?: number
-  /** Whether the plugin's width control owns the column (vs. native handles). */
-  usePluginWidth?: boolean
-  /** Side margin in px; minimum 32. */
-  sideMargin?: number
-  /** Whether the think (reasoning) body is capped at a fixed height. */
-  thinkFixedHeight?: boolean
-  /** Think body display height in px; clamped to [120, 1200]. */
-  thinkHeight?: number
-  // CSS tweaks.
-  /** Whether the stable-table tweak is enabled. */
-  stableTable?: boolean
-  /** Whether the stable-turn-rail tweak is enabled. */
-  stableTurnRail?: boolean
-  /** Whether the session titles stay put with their ellipsis on hover. */
-  stableSessionTitle?: boolean
-  /** Whether the keep-turn-rail tweak is enabled. */
-  keepTurnRail?: boolean
-  /** Whether the code-block-flush-top tweak is enabled. */
-  codeBlockFlushTop?: boolean
-  /** Whether the project-running-indicator tweak is enabled. */
-  projectRunningIndicator?: boolean
-  /** Whether the locate-current-session tweak is enabled. */
-  locateCurrentSession?: boolean
-  /** Whether the settings-nav-scroll tweak is enabled. */
-  settingsNavScroll?: boolean
-  /** Whether the sidebar middle-click close tweak is enabled. */
-  sidebarMiddleClickClose?: boolean
-  /** Whether the legacy-stats-line tweak is enabled. */
-  legacyStatsLine?: boolean
-  /** Whether the pills-cache-hit-decimals tweak is enabled. */
-  pillsCacheHitDecimals?: boolean
-  /** Whether the turn-speed-metrics tweak is enabled. */
-  turnSpeedMetrics?: boolean
-  /** Whether the context capsule's hover tooltip is suppressed. */
-  contextPillNoTooltip?: boolean
-  /** Whether the pre-alpha.2 context ring is rendered inside the input card. */
-  legacyContextMeter?: boolean
-  /** Whether the user can close (hide) Workspaces without deleting them. */
-  workspaceClose?: boolean
-  /** Ids of the Workspaces currently closed (internal data, recovery list only). */
-  closedWorkspaces?: string[]
-  /** Whether the plugin owns the right Sidebar's first-open width. */
-  rightbarInitialWidth?: boolean
-  /** Right Sidebar first-open width as a percentage of the frame; clamped to [15, 70]. */
-  rightbarWidthPercent?: number
-}
-
-interface ResolvedTweaks {
-  dialogWidth: number
-  usePluginWidth: boolean
-  sideMargin: number
-  thinkFixedHeight: boolean
-  thinkHeight: number
-  stableTable: boolean
-  stableTurnRail: boolean
-  stableSessionTitle: boolean
-  keepTurnRail: boolean
-  codeBlockFlushTop: boolean
-  projectRunningIndicator: boolean
-  locateCurrentSession: boolean
-  settingsNavScroll: boolean
-  sidebarMiddleClickClose: boolean
-  legacyStatsLine: boolean
-  pillsCacheHitDecimals: boolean
-  turnSpeedMetrics: boolean
-  contextPillNoTooltip: boolean
-  legacyContextMeter: boolean
-  workspaceClose: boolean
-  closedWorkspaces: readonly string[]
-  rightbarInitialWidth: boolean
-  rightbarWidthPercent: number
-}
+/**
+ * The settings document as the plugin's own route returns it (every field
+ * optional), and the same document with every default materialized.
+ *
+ * Both are aliases of the mirrors in `tweak-types.ts` instead of second
+ * hand-written copies, and `resolveValue` below delegates to
+ * `resolveClientConfig` — the one runtime resolver. A field that exists on one
+ * side only is therefore a compile error rather than a default that silently
+ * drifts.
+ */
+type TweaksValue = Partial<ResolvedStyleTweaksConfig>
+type ResolvedTweaks = ResolvedStyleTweaksConfig
 
 interface Snapshot {
   writable: boolean
@@ -215,6 +155,13 @@ const en = {
   rightbarInitialWidthHint: 'Own the right sidebar\'s first-open width. OFF by default, which leaves DSH\'s own 45% in charge. When ON, the plugin writes the width once — the first time the sidebar opens in this page load — as a percentage of the session frame; a manual drag, and every later open, keeps your own width. Reload the page to apply the percentage again.',
   rightbarWidthPercent: 'Right sidebar width',
   rightbarWidthPercentHint: 'First-open width of the right sidebar as a percentage of the session frame, between 15 and 70. DSH clamps the result into its own range (at least 300 px, at most 70% of the frame), so a conversion below 300 px renders 300 px wide.',
+  sectionHistory: 'History loading',
+  historyPageSizeEnabled: 'Custom history page size',
+  historyPageSizeEnabledHint: 'DSH pages conversation history at a fixed 50 messages per request: the first screen when a session opens, and every click of "Load earlier". When ON, the browser asks for more messages per request so walking back through a long session takes fewer clicks. OFF (default) keeps DSH\'s own behaviour and hides the size rows below.',
+  historyPageSize: 'Messages per history page',
+  historyPageSizeHint: 'Messages requested per history page while the control above is on. Larger values mean fewer clicks (and fewer round trips), at the cost of bigger single responses. A save applies to the next request. Page sizes are only ever raised, never lowered: "Load earlier" asks for the stock 50 and the turn-jump loader asks for 200, so both follow this value once it exceeds theirs — above 200, every turn jump gets heavier too.',
+  historyPageSizeColdStart: 'Apply to session open too',
+  historyPageSizeColdStartHint: 'When ON (default), opening a session (its first screen) also requests the larger page: history appears with fewer "Load earlier" clicks, but the initial load carries more data, so cold starts get slower. OFF keeps the stock 50-message first screen; the size then only affects "Load earlier" clicks. Hidden while the page size is 50 (nothing to apply).',
   defaultAction: 'Default',
   saving: 'Saving…',
   applied: 'Applied',
@@ -327,6 +274,13 @@ const zh: Record<LocaleKey, string> = {
   rightbarInitialWidthHint: '接管右侧边栏首次打开时的宽度。默认关闭，此时保持 DSH 自身的 45% 不变；开启后仅在本次页面加载后的第一次打开时按会话窗口的百分比写入一次，之后手动拖拽、关闭再打开都保留你自己拖出来的宽度，刷新页面后该百分比会重新生效。',
   rightbarWidthPercent: '右侧边栏宽度',
   rightbarWidthPercentHint: '右侧边栏首次打开时占会话窗口宽度的百分比，取值 15–70。DSH 会把结果钳制到它自己的范围内（最小 300 px、最大窗口的 70%），因此换算结果不足 300 px 时会按 300 px 显示。',
+  sectionHistory: '历史加载',
+  historyPageSizeEnabled: '自定义历史分页大小',
+  historyPageSizeEnabledHint: 'DSH 每次请求固定只加载 50 条对话消息：打开会话的首屏和每次点击「加载更早」都是 50。开启后浏览器会在每次请求时携带更大的条数，回看长会话需要的点击更少。关闭时（默认）保持 DSH 原生行为，下方条数设置行一并隐藏。',
+  historyPageSize: '每次加载的历史消息数',
+  historyPageSizeHint: '上方开关开启时，每次历史请求携带的消息条数。调大后回看长会话需要的点击次数（和请求往返次数）更少，代价是单次响应更大。保存后对下一次请求生效。分页只升不降：「加载更早」原生请求 50 条、轮次跳转加载器原生请求 200 条，设置值超过它们时都会按设置值放大——超过 200 时每次轮次跳转也会一并变重。',
+  historyPageSizeColdStart: '打开会话时同样生效',
+  historyPageSizeColdStartHint: '开启时（默认），打开会话（首屏）也按调大后的页数请求：历史出现得更完整、「加载更早」点得更少，但首次加载携带的数据更多，冷启动会变慢。关闭时首屏保持原生的 50 条，页数只影响「加载更早」。页数为 50 时本项隐藏（无可生效）。',
   defaultAction: '默认',
   saving: '保存中…',
   applied: '已应用',
@@ -422,44 +376,35 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 function resolveValue(value: TweaksValue | undefined): ResolvedTweaks {
-  return {
-    dialogWidth: resolveDialogWidth(value?.dialogWidth),
-    usePluginWidth: value?.usePluginWidth ?? DEFAULT_USE_PLUGIN_WIDTH,
-    sideMargin: resolveSideMargin(value?.sideMargin),
-    thinkFixedHeight: value?.thinkFixedHeight ?? DEFAULT_THINK_FIXED_HEIGHT,
-    thinkHeight: resolveThinkHeight(value?.thinkHeight),
-    stableTable: value?.stableTable ?? false,
-    stableTurnRail: value?.stableTurnRail ?? true,
-    stableSessionTitle: value?.stableSessionTitle ?? false,
-    keepTurnRail: value?.keepTurnRail ?? false,
-    codeBlockFlushTop: value?.codeBlockFlushTop ?? true,
-    projectRunningIndicator: value?.projectRunningIndicator ?? true,
-    locateCurrentSession: value?.locateCurrentSession ?? true,
-    settingsNavScroll: value?.settingsNavScroll ?? true,
-    sidebarMiddleClickClose: value?.sidebarMiddleClickClose ?? true,
-    legacyStatsLine: value?.legacyStatsLine ?? false,
-    pillsCacheHitDecimals: value?.pillsCacheHitDecimals ?? false,
-    turnSpeedMetrics: value?.turnSpeedMetrics ?? false,
-    contextPillNoTooltip: value?.contextPillNoTooltip ?? false,
-    legacyContextMeter: value?.legacyContextMeter ?? false,
-    workspaceClose: value?.workspaceClose ?? DEFAULT_WORKSPACE_CLOSE,
-    closedWorkspaces: resolveClosedWorkspaces(value?.closedWorkspaces),
-    rightbarInitialWidth: value?.rightbarInitialWidth ?? DEFAULT_RIGHTBAR_INITIAL_WIDTH,
-    rightbarWidthPercent: resolveRightbarPercent(value?.rightbarWidthPercent),
-  }
+  // Delegates to the client mirror in tweak-config.ts (itself a mirror of
+  // `resolveConfig` in src/config.ts) so there is exactly one place where a
+  // missing field falls back to its default. The previous hand-written copy
+  // here was a fourth, unverified default site.
+  return resolveClientConfig(value)
 }
 
 /**
  * Whether two resolved snapshots would mount the same tweaks with the same
- * captured values. `closedWorkspaces` is deliberately ignored: it drives no
- * mount decision (only the `workspaceClose` boolean does) and the
- * workspace-close tweak holds its own live channel to the settings client, so
- * it re-filters in place. Excluding it keeps a close/restore — by far the most
- * frequent settings change this plugin sees — from re-mounting every tweak.
+ * captured values. Two groups of keys are deliberately ignored, because
+ * neither drives a mount:
+ *
+ *   - `closedWorkspaces` — only the `workspaceClose` boolean mounts anything,
+ *     and the workspace-close tweak holds its own live channel to the settings
+ *     client, so it re-filters in place. Excluding it keeps a close/restore —
+ *     by far the most frequent settings change this plugin sees — from
+ *     re-mounting every tweak.
+ *   - `historyPageSize*` — the history page size is a transport feature: its
+ *     rewrites install once per page load and `sync` pushes the live targets
+ *     itself, above this check. Without the exclusion every ± click on the
+ *     stepper would tear down and re-install every tweak.
+ *
+ * Both exclusions are safe only because `sync` does its transport work before
+ * consulting this function — keep that order.
  */
 function sameMountInputs(left: ResolvedTweaks, right: ResolvedTweaks): boolean {
   for (const key of Object.keys(right) as Array<keyof ResolvedTweaks>) {
     if (key === 'closedWorkspaces') continue
+    if (key === 'historyPageSizeEnabled' || key === 'historyPageSize' || key === 'historyPageSizeColdStart') continue
     if (left[key] !== right[key]) return false
   }
   return true
@@ -752,11 +697,13 @@ function SettingsSection({ controller, t }: SettingsSectionProps) {
   const [marginDraft, setMarginDraft] = useState<string>(String(resolved.sideMargin))
   const [thinkHeightDraft, setThinkHeightDraft] = useState<string>(String(resolved.thinkHeight))
   const [rightbarWidthDraft, setRightbarWidthDraft] = useState<string>(String(resolved.rightbarWidthPercent))
+  const [historyPageSizeDraft, setHistoryPageSizeDraft] = useState<string>(String(resolved.historyPageSize))
 
   useEffect(() => { setWidthDraft(String(resolved.dialogWidth)) }, [resolved.dialogWidth])
   useEffect(() => { setMarginDraft(String(resolved.sideMargin)) }, [resolved.sideMargin])
   useEffect(() => { setThinkHeightDraft(String(resolved.thinkHeight)) }, [resolved.thinkHeight])
   useEffect(() => { setRightbarWidthDraft(String(resolved.rightbarWidthPercent)) }, [resolved.rightbarWidthPercent])
+  useEffect(() => { setHistoryPageSizeDraft(String(resolved.historyPageSize)) }, [resolved.historyPageSize])
 
   const commitDialogWidth = (raw: string): void => {
     setWidthDraft(raw)
@@ -838,6 +785,35 @@ function SettingsSection({ controller, t }: SettingsSectionProps) {
   const applyRightbarWidthPreset = (percent: number): void => {
     setRightbarWidthDraft(String(percent))
     save('rightbarWidthPercent', percent)
+  }
+
+  const commitHistoryPageSize = (raw: string): void => {
+    setHistoryPageSizeDraft(raw)
+    // An emptied field — or one typed below the floor — must not silently
+    // commit the minimum: 50 is not just the smallest page here, it is the
+    // "feature is a no-op" value, and it also hides the cold-start row, so a
+    // half-typed "3" on the way to "300" would look like the feature switched
+    // itself off while its master switch still reads ON. Revert to the stored
+    // size instead. (Unlike the other numeric fields, clamping is not a
+    // harmless no-op here — that is the whole difference.)
+    const parsed = Number(raw)
+    if (raw.trim() === '' || !Number.isFinite(parsed) || parsed < MIN_HISTORY_PAGE_SIZE) {
+      setHistoryPageSizeDraft(String(resolved.historyPageSize))
+      return
+    }
+    const clamped = Math.min(MAX_HISTORY_PAGE_SIZE, Math.round(parsed))
+    setHistoryPageSizeDraft(String(clamped))
+    save('historyPageSize', clamped)
+  }
+
+  const stepHistoryPageSize = (delta: number): void => {
+    const next = Math.min(MAX_HISTORY_PAGE_SIZE, Math.max(MIN_HISTORY_PAGE_SIZE, resolved.historyPageSize + delta))
+    setHistoryPageSizeDraft(String(next))
+    save('historyPageSize', next)
+  }
+
+  const setHistoryPageSizeColdStart = (value: boolean): void => {
+    save('historyPageSizeColdStart', value)
   }
 
   const setTweak = (tweak: TweakDescriptor, value: boolean): void => {
@@ -1018,6 +994,63 @@ function SettingsSection({ controller, t }: SettingsSectionProps) {
       </section>
 
       <section className="cst-panel">
+        <div className="cst-section-label">{t('sectionHistory')}</div>
+        <div className="cst-field">
+          <div className="cst-field-top">
+            <span className="cst-label">{t('historyPageSizeEnabled')}<Hint text={t('historyPageSizeEnabledHint')} /></span>
+            <div className="cst-controls">
+              <div className="cst-seg">
+                <button type="button" className={resolved.historyPageSizeEnabled ? 'cst-seg-active' : ''} disabled={!writable} onClick={() => { save('historyPageSizeEnabled', true) }}>{t('tweakOn')}</button>
+                <button type="button" className={!resolved.historyPageSizeEnabled ? 'cst-seg-active' : ''} disabled={!writable} onClick={() => { save('historyPageSizeEnabled', false) }}>{t('tweakOff')}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        {resolved.historyPageSizeEnabled ? (
+          <>
+            <div className="cst-field">
+              <div className="cst-field-top">
+                <span className="cst-label">{t('historyPageSize')}<Hint text={t('historyPageSizeHint')} /></span>
+                <div className="cst-controls">
+                  <div className="cst-stepper">
+                    <button type="button" aria-label="−" disabled={!writable || resolved.historyPageSize <= MIN_HISTORY_PAGE_SIZE} onClick={() => { stepHistoryPageSize(-STEP_HISTORY_PAGE_SIZE) }}>−</button>
+                    <input
+                      type="number"
+                      min={MIN_HISTORY_PAGE_SIZE}
+                      max={MAX_HISTORY_PAGE_SIZE}
+                      step={STEP_HISTORY_PAGE_SIZE}
+                      value={historyPageSizeDraft}
+                      disabled={!writable}
+                      onChange={(event) => { setHistoryPageSizeDraft(event.target.value) }}
+                      onBlur={(event) => { commitHistoryPageSize(event.target.value) }}
+                      onKeyDown={(event) => { if (event.key === 'Enter') commitHistoryPageSize((event.target as HTMLInputElement).value) }}
+                    />
+                    <button type="button" aria-label="+" disabled={!writable || resolved.historyPageSize >= MAX_HISTORY_PAGE_SIZE} onClick={() => { stepHistoryPageSize(STEP_HISTORY_PAGE_SIZE) }}>+</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {/* Hide only when the size cannot exceed the native 50-message
+                first screen — compare against the stock minimum, NOT the
+                configurable default (200), or the row would never show. */}
+            {resolved.historyPageSize > MIN_HISTORY_PAGE_SIZE ? (
+              <div className="cst-field">
+                <div className="cst-field-top">
+                  <span className="cst-label">{t('historyPageSizeColdStart')}<Hint text={t('historyPageSizeColdStartHint')} /></span>
+                  <div className="cst-controls">
+                    <div className="cst-seg">
+                      <button type="button" className={resolved.historyPageSizeColdStart ? 'cst-seg-active' : ''} disabled={!writable} onClick={() => { setHistoryPageSizeColdStart(true) }}>{t('tweakOn')}</button>
+                      <button type="button" className={!resolved.historyPageSizeColdStart ? 'cst-seg-active' : ''} disabled={!writable} onClick={() => { setHistoryPageSizeColdStart(false) }}>{t('tweakOff')}</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </>
+        ) : null}
+      </section>
+
+      <section className="cst-panel">
         <div className="cst-section-label">{t('sectionTweaks')}</div>
         {TWEAKS.map(tweak => {
           const enabled = (resolved as unknown as Record<string, boolean>)[tweak.settingKey] ?? tweak.defaultEnabled
@@ -1171,9 +1204,30 @@ export function apply(ctx: ClientContext): void {
     const sync = (): void => {
       const value = controller.getSnapshot().value
       const resolved = resolveValue(value)
-      // A settings change that only moves `closedWorkspaces` needs no
-      // re-mount: the workspace-close tweak subscribes to this client and
-      // re-filters in place. Everything else still re-mounts as before.
+      // History page size: a transport feature, so it is handled BEFORE the
+      // mount early-return below — `sameMountInputs` excludes the
+      // `historyPageSize*` keys, which makes this the only place that can push
+      // them. The fetch/WebSocket rewrites install once for the page lifetime
+      // (no teardown of the wrappers: unwinding them around other plugins' own
+      // wrappers is not worth the risk); every settings change just moves the
+      // live targets, so a save applies to the next request without
+      // re-patching anything. The targets are only pushed once the settings
+      // snapshot has landed: the transport seeds itself from localStorage for
+      // the cold window, and publishing the defaults before the first read
+      // would clobber that seed. The push carries the EFFECTIVE settings — the
+      // master switch off means the stock 50-message pages stand, whatever the
+      // stored size says; the stored size survives for a re-enable. The
+      // cold-start flag is masked by the same switch, so an off feature skips
+      // the `session/follow` frame parse as well and not just the rewrite.
+      installHistoryPageSizeTransport()
+      if (value !== undefined) {
+        setHistoryPageSizeTargets(
+          resolved.historyPageSizeEnabled ? resolved.historyPageSize : MIN_HISTORY_PAGE_SIZE,
+          resolved.historyPageSizeEnabled && resolved.historyPageSizeColdStart,
+        )
+      }
+      // A settings change that only moves an excluded key (see
+      // `sameMountInputs`) needs no re-mount. Everything else re-mounts.
       if (mounted !== undefined && sameMountInputs(mounted, resolved)) {
         mounted = resolved
         return
@@ -1204,7 +1258,17 @@ export function apply(ctx: ClientContext): void {
       }
     }
     sync()
-    return controller.subscribe(sync)
+    const unsubscribe = controller.subscribe(sync)
+    // Plugin teardown (disable, or a bundle reload in the same page): the
+    // wrappers stay installed for the page lifetime by design, but this
+    // instance releases the targets so it stops rewriting. The release is
+    // ownership-checked on the shared state, so a teardown that lands after
+    // the next instance has already taken over is a no-op rather than a wipe
+    // of the new instance's settings.
+    return () => {
+      unsubscribe()
+      resetHistoryPageSizeTargets()
+    }
   }, 'dsh-style-tweaks: live tweak styles')
 
   ctx.slots.inject('settings.section', () => ctx.slots.register({

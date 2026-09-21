@@ -57,4 +57,10 @@ export interface ResolvedStyleTweaksConfig {
   rightbarInitialWidth: boolean
   /** Right Sidebar first-open width as a percentage of the session frame. */
   rightbarWidthPercent: number
+  /** Whether the custom history page size is active. */
+  historyPageSizeEnabled: boolean
+  /** History page size requested per pagination round (used while enabled). */
+  historyPageSize: number
+  /** Whether the cold-open first screen uses `historyPageSize` too. */
+  historyPageSizeColdStart: boolean
 }

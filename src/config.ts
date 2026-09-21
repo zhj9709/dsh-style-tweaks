@@ -56,6 +56,34 @@ export interface StyleTweaksConfig {
    */
   thinkHeight?: number
   /**
+   * Whether the custom history page size is active. Off (default): DSH's
+   * stock 50-message pages stand and `historyPageSize` is inert (its row is
+   * hidden from the panel). On: pagination requests are raised to
+   * `historyPageSize`. The last saved size survives an off period.
+   */
+  historyPageSizeEnabled?: boolean
+  /**
+   * Raise the conversation-history page size above DSH's stock 50 messages.
+   * The cold open and every "Load earlier" click ask for 50 append messages;
+   * the client request carries `maxMessages` and the host validates it as any
+   * positive safe integer, so the browser client can simply ask for more.
+   * Clamped to [50, 1000] on read; default 200. Only read while
+   * `historyPageSizeEnabled` is on. Applies to the next request after a
+   * save. Page sizes are only ever raised, never lowered: "Load earlier" asks
+   * for the stock 50 and the turn-jump loader asks for `JUMP_PAGE_MESSAGES`
+   * (200), so both follow this value once it exceeds theirs — above 200 every
+   * turn jump gets heavier too.
+   */
+  historyPageSize?: number
+  /**
+   * Also raise the first screen a session opens with (`session/follow`) to
+   * `historyPageSize`. A larger first page shows more history with fewer
+   * "Load earlier" clicks but carries more data, so cold starts get slower;
+   * on (default) raises that first screen, off keeps the stock 50-message one.
+   * Hidden while `historyPageSize` is 50 (nothing to apply).
+   */
+  historyPageSizeColdStart?: boolean
+  /**
    * Own the right Sidebar's first-open width (host 0.1.5+). Off (default):
    * the host's own 45% default owns the axis. On: the plugin writes the
    * width once — the first time the right Sidebar opens during this page
@@ -261,6 +289,25 @@ export const MAX_THINK_HEIGHT = 1200
  */
 export const CONVERSATION_WIDTH_STORAGE_KEY = 'dsh.conversation.contentWidth'
 
+// ── History page-size constants ─────────────────────────────────────────
+/** Whether the custom history page size is active. */
+export const DEFAULT_HISTORY_PAGE_SIZE_ENABLED = false
+/** Default page size once the control is enabled. */
+export const DEFAULT_HISTORY_PAGE_SIZE = 200
+/** Whether opening a session (cold start) also uses the raised page size. */
+export const DEFAULT_HISTORY_PAGE_SIZE_COLD_START = true
+/** Minimum individual page size; below this there is nothing to raise. */
+export const MIN_HISTORY_PAGE_SIZE = 50
+/**
+ * Maximum messages per page. The host validates `maxMessages` as any
+ * positive safe integer, so the cap here is purely a UI guardrail: one page
+ * is one HTTP response buffered in the browser, and 1000 messages already
+ * covers this test session's ~9 turns of dense tool-call traffic.
+ */
+export const MAX_HISTORY_PAGE_SIZE = 1000
+/** Step for the page-size stepper. */
+export const STEP_HISTORY_PAGE_SIZE = 50
+
 // ── CSS tweak constants ─────────────────────────────────────────────────
 /**
  * Default: off — DSH 0.1.6-alpha.1 fixed the hover reflow upstream, so the
@@ -352,6 +399,9 @@ export const Config: Schema<StyleTweaksConfig> = z.object({
   closedWorkspaces: z.array(z.string()).default([...DEFAULT_CLOSED_WORKSPACES]),
   rightbarInitialWidth: z.boolean().default(DEFAULT_RIGHTBAR_INITIAL_WIDTH),
   rightbarWidthPercent: z.number().min(MIN_RIGHTBAR_WIDTH_PERCENT).max(MAX_RIGHTBAR_WIDTH_PERCENT).default(DEFAULT_RIGHTBAR_WIDTH_PERCENT),
+  historyPageSizeEnabled: z.boolean().default(DEFAULT_HISTORY_PAGE_SIZE_ENABLED),
+  historyPageSize: z.number().min(MIN_HISTORY_PAGE_SIZE).max(MAX_HISTORY_PAGE_SIZE).default(DEFAULT_HISTORY_PAGE_SIZE),
+  historyPageSizeColdStart: z.boolean().default(DEFAULT_HISTORY_PAGE_SIZE_COLD_START),
 })
 
 /** Configuration after static validation, with every default materialized. */
@@ -402,6 +452,12 @@ export interface ResolvedStyleTweaksConfig {
   rightbarInitialWidth: boolean
   /** Right Sidebar first-open width as a percentage of the session frame. */
   rightbarWidthPercent: number
+  /** Whether the custom history page size is active. */
+  historyPageSizeEnabled: boolean
+  /** History page size requested per pagination round (used while enabled). */
+  historyPageSize: number
+  /** Whether the cold-open first screen uses `historyPageSize` too. */
+  historyPageSizeColdStart: boolean
 }
 
 /** Resolve a partial config into a fully defaulted value. */
@@ -430,6 +486,9 @@ export function resolveConfig(config: StyleTweaksConfig = {}): ResolvedStyleTwea
     closedWorkspaces: resolveClosedWorkspaces(config.closedWorkspaces),
     rightbarInitialWidth: config.rightbarInitialWidth ?? DEFAULT_RIGHTBAR_INITIAL_WIDTH,
     rightbarWidthPercent: resolveRightbarPercent(config.rightbarWidthPercent),
+    historyPageSizeEnabled: config.historyPageSizeEnabled ?? DEFAULT_HISTORY_PAGE_SIZE_ENABLED,
+    historyPageSize: resolveHistoryPageSize(config.historyPageSize),
+    historyPageSizeColdStart: config.historyPageSizeColdStart ?? DEFAULT_HISTORY_PAGE_SIZE_COLD_START,
   }
 }
 
@@ -461,6 +520,17 @@ export function resolveRightbarPercent(value: number | undefined): number {
     return Math.min(MAX_RIGHTBAR_WIDTH_PERCENT, Math.max(MIN_RIGHTBAR_WIDTH_PERCENT, Math.round(value)))
   }
   return DEFAULT_RIGHTBAR_WIDTH_PERCENT
+}
+
+/**
+ * Normalize the history page size to a whole number of messages. Must match
+ * `resolveHistoryPageSize` in src/client/tweak-config.ts.
+ */
+export function resolveHistoryPageSize(value: number | undefined): number {
+  if (typeof value === 'number') {
+    return Math.min(MAX_HISTORY_PAGE_SIZE, Math.max(MIN_HISTORY_PAGE_SIZE, Math.round(value)))
+  }
+  return DEFAULT_HISTORY_PAGE_SIZE
 }
 
 /**

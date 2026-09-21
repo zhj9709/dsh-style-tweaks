@@ -79,6 +79,20 @@ export const MIN_RIGHTBAR_WIDTH_PERCENT = 15
 /** Maximum configurable right Sidebar width percentage (= the host's 70% cap). */
 export const MAX_RIGHTBAR_WIDTH_PERCENT = 70
 
+// ── History page-size constants (mirror src/config.ts) ──────────────────
+/** Whether the custom history page size is active. */
+export const DEFAULT_HISTORY_PAGE_SIZE_ENABLED = false
+/** Default page size once the control is enabled. */
+export const DEFAULT_HISTORY_PAGE_SIZE = 200
+/** Whether opening a session (cold start) also uses the raised page size. */
+export const DEFAULT_HISTORY_PAGE_SIZE_COLD_START = true
+/** Minimum individual page size; below this there is nothing to raise. */
+export const MIN_HISTORY_PAGE_SIZE = 50
+/** Maximum messages per page (UI guardrail; see src/config.ts). */
+export const MAX_HISTORY_PAGE_SIZE = 1000
+/** Step for the page-size stepper. */
+export const STEP_HISTORY_PAGE_SIZE = 50
+
 /**
  * Normalize a dialog width value (legacy strings included) to px.
  * Must match `resolveDialogWidth` in src/config.ts.
@@ -122,6 +136,17 @@ export function resolveRightbarPercent(value: number | undefined): number {
 }
 
 /**
+ * Normalize the history page size to a whole number of messages.
+ * Must match `resolveHistoryPageSize` in src/config.ts.
+ */
+export function resolveHistoryPageSize(value: number | undefined): number {
+  if (typeof value === 'number') {
+    return Math.min(MAX_HISTORY_PAGE_SIZE, Math.max(MIN_HISTORY_PAGE_SIZE, Math.round(value)))
+  }
+  return DEFAULT_HISTORY_PAGE_SIZE
+}
+
+/**
  * Normalize the closed-Workspace id list: keep non-empty strings only.
  * Must match `resolveClosedWorkspaces` in src/config.ts.
  */
@@ -162,5 +187,8 @@ export function resolveClientConfig(
     closedWorkspaces: resolveClosedWorkspaces(value?.closedWorkspaces),
     rightbarInitialWidth: value?.rightbarInitialWidth ?? DEFAULT_RIGHTBAR_INITIAL_WIDTH,
     rightbarWidthPercent: resolveRightbarPercent(value?.rightbarWidthPercent),
+    historyPageSizeEnabled: value?.historyPageSizeEnabled ?? DEFAULT_HISTORY_PAGE_SIZE_ENABLED,
+    historyPageSize: resolveHistoryPageSize(value?.historyPageSize),
+    historyPageSizeColdStart: value?.historyPageSizeColdStart ?? DEFAULT_HISTORY_PAGE_SIZE_COLD_START,
   }
 }
