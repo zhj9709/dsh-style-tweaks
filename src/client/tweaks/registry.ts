@@ -48,6 +48,15 @@ export const TWEAKS: readonly TweakDescriptor[] = [
     descriptionKey: 'tweak.stableSessionTitle.description',
   },
   {
+    id: 'hide-session-hover-actions',
+    settingKey: 'hideSessionHoverActions',
+    // Off: the archive / pin hover buttons are the host's shipped affordance;
+    // taking them off the row is opt-in.
+    defaultEnabled: false,
+    titleKey: 'tweak.hideSessionHoverActions.title',
+    descriptionKey: 'tweak.hideSessionHoverActions.description',
+  },
+  {
     id: 'keep-turn-rail',
     settingKey: 'keepTurnRail',
     defaultEnabled: false,

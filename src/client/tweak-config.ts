@@ -42,6 +42,8 @@ export const CONVERSATION_WIDTH_STORAGE_KEY = 'dsh.conversation.contentWidth'
 export const DEFAULT_STABLE_TURN_RAIL = true
 /** Default state of the stable-session-title tweak (off: the hover reveal stays). */
 export const DEFAULT_STABLE_SESSION_TITLE = false
+/** Default state of the hide-session-hover-actions tweak (off: the host's hover buttons stay). */
+export const DEFAULT_HIDE_SESSION_HOVER_ACTIONS = false
 /** Default state of the keep-turn-rail tweak (off: the host's 900px container query stands). */
 export const DEFAULT_KEEP_TURN_RAIL = false
 /** Default state of the code-block-flush-top tweak. */
@@ -169,6 +171,7 @@ export function resolveClientConfig(
     thinkHeight: resolveThinkHeight(value?.thinkHeight),
     stableTurnRail: value?.stableTurnRail ?? DEFAULT_STABLE_TURN_RAIL,
     stableSessionTitle: value?.stableSessionTitle ?? DEFAULT_STABLE_SESSION_TITLE,
+    hideSessionHoverActions: value?.hideSessionHoverActions ?? DEFAULT_HIDE_SESSION_HOVER_ACTIONS,
     keepTurnRail: value?.keepTurnRail ?? DEFAULT_KEEP_TURN_RAIL,
     codeBlockFlushTop: value?.codeBlockFlushTop ?? DEFAULT_CODE_BLOCK_FLUSH_TOP,
     projectRunningIndicator: value?.projectRunningIndicator ?? DEFAULT_PROJECT_RUNNING_INDICATOR,

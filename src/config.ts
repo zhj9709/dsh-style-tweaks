@@ -128,6 +128,16 @@ export interface StyleTweaksConfig {
    */
   stableSessionTitle?: boolean
   /**
+   * Keep the archive and pin icon buttons off a session row: they arrive as
+   * injected entries of the workspace browser's
+   * `sidebar.workspaces.session.row.action` list, rendered inside the row's
+   * trailing strip while the row is hovered. On: the strip keeps only the
+   * host's own `...` menu button (where both actions stay available), so a
+   * one-click archive no longer sits under the pointer. Off (default): the
+   * host's hover affordance stands.
+   */
+  hideSessionHoverActions?: boolean
+  /**
    * Keep DSH's turn-navigation rail visible after the right Sidebar is
    * widened far enough to hide it. The host's `TurnNavigator.module.css`
    * hides the rail with `@container (max-width:900px)` measured against the
@@ -316,6 +326,11 @@ export const DEFAULT_STABLE_TURN_RAIL = true
  */
 export const DEFAULT_STABLE_SESSION_TITLE = false
 /**
+ * Default: off — the archive / pin hover buttons are the host's shipped
+ * affordance; taking them off the row is opt-in.
+ */
+export const DEFAULT_HIDE_SESSION_HOVER_ACTIONS = false
+/**
  * Default: off — the host's own 900px container query stands until the user
  * opts into keeping the rail at every chat width.
  */
@@ -391,6 +406,7 @@ export const Config: Schema<StyleTweaksConfig> = z.object({
   thinkHeight: live(z.number().min(MIN_THINK_HEIGHT).max(MAX_THINK_HEIGHT).default(DEFAULT_THINK_HEIGHT)),
   stableTurnRail: live(z.boolean().default(DEFAULT_STABLE_TURN_RAIL)),
   stableSessionTitle: live(z.boolean().default(DEFAULT_STABLE_SESSION_TITLE)),
+  hideSessionHoverActions: live(z.boolean().default(DEFAULT_HIDE_SESSION_HOVER_ACTIONS)),
   keepTurnRail: live(z.boolean().default(DEFAULT_KEEP_TURN_RAIL)),
   codeBlockFlushTop: live(z.boolean().default(DEFAULT_CODE_BLOCK_FLUSH_TOP)),
   projectRunningIndicator: live(z.boolean().default(DEFAULT_PROJECT_RUNNING_INDICATOR)),
@@ -427,6 +443,8 @@ export interface ResolvedStyleTweaksConfig {
   stableTurnRail: boolean
   /** Whether the session titles stay put with their ellipsis on hover. */
   stableSessionTitle: boolean
+  /** Whether the archive / pin hover buttons stay off the session rows. */
+  hideSessionHoverActions: boolean
   /** Whether the keep-turn-rail tweak is enabled. */
   keepTurnRail: boolean
   /** Whether the code-block-flush-top tweak is enabled. */
@@ -475,6 +493,7 @@ export function resolveConfig(config: StyleTweaksConfig = {}): ResolvedStyleTwea
     thinkHeight: resolveThinkHeight(config.thinkHeight),
     stableTurnRail: config.stableTurnRail ?? DEFAULT_STABLE_TURN_RAIL,
     stableSessionTitle: config.stableSessionTitle ?? DEFAULT_STABLE_SESSION_TITLE,
+    hideSessionHoverActions: config.hideSessionHoverActions ?? DEFAULT_HIDE_SESSION_HOVER_ACTIONS,
     keepTurnRail: config.keepTurnRail ?? DEFAULT_KEEP_TURN_RAIL,
     codeBlockFlushTop: config.codeBlockFlushTop ?? DEFAULT_CODE_BLOCK_FLUSH_TOP,
     projectRunningIndicator: config.projectRunningIndicator ?? DEFAULT_PROJECT_RUNNING_INDICATOR,

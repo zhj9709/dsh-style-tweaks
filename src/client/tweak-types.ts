@@ -25,6 +25,8 @@ export interface ResolvedStyleTweaksConfig {
   stableTurnRail: boolean
   /** Whether the session titles stay put with their ellipsis on hover. */
   stableSessionTitle: boolean
+  /** Whether the archive / pin hover buttons stay off the session rows. */
+  hideSessionHoverActions: boolean
   /** Whether the keep-turn-rail tweak is enabled. */
   keepTurnRail: boolean
   /** Whether the code-block-flush-top tweak is enabled. */
