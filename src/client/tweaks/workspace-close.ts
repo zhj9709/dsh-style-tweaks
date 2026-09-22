@@ -52,7 +52,7 @@
 
 import { createElement, Fragment, useSyncExternalStore } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { Button, IconCloseOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconCloseOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { resolveClosedWorkspaces } from '../tweak-config.ts'
 
@@ -351,7 +351,7 @@ interface InjectedEntry {
  * (CSS-module class names are hashed, so cloning beats re-creating the
  * markup). Two deliberate changes: the danger tint is stripped (closing is
  * reversible, deleting is not) and the trash glyph is replaced by a close
- * mark — the caller renders {@link IconCloseOutline16} into the returned
+ * mark — the caller renders {@link IconCloseOutlineRegular} into the returned
  * `iconHost` once the entry is in the document.
  */
 function buildCloseEntry(
@@ -778,7 +778,7 @@ export function setupWorkspaceClose(
     // seat is a cloned node, and mounting a root on a detached element buys
     // nothing.
     const iconRoot = iconHost === undefined ? undefined : createRoot(iconHost)
-    iconRoot?.render(createElement(IconCloseOutline16))
+    iconRoot?.render(createElement(IconCloseOutlineRegular))
     // Our row is in the document now, so the card is at its final height: let
     // the host re-run its own placement against it (see above).
     refitMenuIfOverflowing(menu)

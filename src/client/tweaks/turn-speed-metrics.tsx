@@ -48,9 +48,11 @@
  * The panel is found by its stable `data-turn-time-details` marker, and the
  * rows are `<dt>/<dd>` pairs after the duration row — the dialog's own
  * `.details dt/.details dd` element rules style them, and the row labels
- * come from DSH's surviving `chat` vocabulary (`message.turnTime.speed` /
- * `message.turnTime.ttft` / `message.tokensPerSecond` / `duration.seconds`),
- * so the refilled dialog reads exactly like the 0.1.2 one. The rows are
+ * come from DSH's surviving `chat` vocabulary (`stats.dialog.speed` /
+ * `stats.dialog.ttft` / `message.tokensPerSecond` / `duration.seconds`),
+ * so the refilled dialog reads exactly like the 0.1.2 one. 0.1.7 renamed the
+ * first two from the old `message.turnTime.*` pair; they are otherwise the
+ * same words, so the rows still read as the host's own. The rows are
  * plain DOM children of the React-owned `<dl>`: they die with the panel
  * (open/unmount per open), and re-opening re-injects.
  *
@@ -186,13 +188,13 @@ function createTurnSpeedMetrics(ctx: ClientContext) {
         const rows: Array<[string, string]> = []
         if (metrics.tokensPerSecond !== undefined) {
           rows.push([
-            hostT('message.turnTime.speed'),
+            hostT('stats.dialog.speed'),
             hostT('message.tokensPerSecond', { tps: formatTokensPerSecond(metrics.tokensPerSecond) }),
           ])
         }
         if (metrics.ttftMs !== undefined) {
           rows.push([
-            hostT('message.turnTime.ttft'),
+            hostT('stats.dialog.ttft'),
             hostT('duration.seconds', { seconds: formatLatencySeconds(metrics.ttftMs) }),
           ])
         }

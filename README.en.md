@@ -297,7 +297,7 @@ to verify the published package itself.
 
 ## How it works
 
-- **Server** (`src/index.ts`) registers the `style-tweaks` settings namespace and mounts a same-origin route (`/_dsh/style-tweaks/settings`).
+- **Server** (`src/index.ts`) declares the `style-tweaks` settings namespace and mounts a same-origin route (`/_dsh/style-tweaks/settings`). Since DSH 0.1.7 that namespace IS this plugin's own entry Config (the entry id is the namespace, its fields carry the `.volatile()` marker, and the values live in the profile patch's `config`); older hosts go through `ctx.settings.register` and get the same namespace.
 - **Browser** (`src/client/index.tsx`) reads/writes that route, renders the Settings section, and mounts / unmounts each tweak live based on its toggle (pure-CSS tweaks inject runtime `<style>` elements; JS-level tweaks also read the app's own state stores and patch the DOM).
 - **Column-width engine** (`src/client/conversation-width.ts`) writes the `--dsh-chat-user-width` CSS variable and hides DSH's native `[data-width-handle]` drag strips while plugin width control is on; the chosen px is also mirrored into the localStorage slot the native handles read, so flipping the switch round-trips cleanly.
 - **Tweak registry** (`src/client/tweaks/registry.ts`) centralises each tweak's metadata (id, settings field name, default value, i18n keys); adding a new tweak means appending one entry here and dropping a new injector file under `src/client/tweaks/`.

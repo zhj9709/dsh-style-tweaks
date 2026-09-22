@@ -43,8 +43,8 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ComponentType, type ReactNode, type RefObject } from 'react'
 import * as dshPrimitives from '@deepseek-ai/dsh-client-ui-primitives'
 import {
-  IconClockOutline16,
-  IconDatabaseOutline16,
+  IconClockOutlineRegular,
+  IconDatabaseOutlineRegular,
   useAnchoredPosition,
   useDismissOnOutsidePointer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -65,10 +65,14 @@ type PillsTranslate = PropsLocale<'style-tweaks'>['t']
 /**
  * The gauge icon the shipped pills use. Primitives only gained it in 0.1.3,
  * so it is looked up on the host's primitives at runtime; the clock icon
- * stands in on hosts that predate it.
+ * stands in on hosts that predate it. 0.1.7 renamed the 16px artwork from the
+ * size suffix to stroke-weight names (`Regular` = 1px, `Medium` = 1.3px), and
+ * the shipped pills moved to `IconGaugeOutlineRegular`, so both spellings are
+ * probed.
  */
-const TimePillIcon = (dshPrimitives as { IconGaugeOutline16?: ComponentType }).IconGaugeOutline16
-  ?? IconClockOutline16
+const TimePillIcon = (dshPrimitives as { IconGaugeOutlineRegular?: ComponentType }).IconGaugeOutlineRegular
+  ?? (dshPrimitives as { IconGaugeOutline16?: ComponentType }).IconGaugeOutline16
+  ?? IconClockOutlineRegular
 
 /** Whole-log figures served by the `sessionStats` projection (see dsh-session-stats). */
 interface SessionStats {
@@ -321,7 +325,7 @@ function UsagePill({ usage, t, dialog }: {
         aria-label={cacheHitText === null ? totalText : `${totalText} · ${cacheHitText}`}
         onClick={() => { seat.setOpen(!seat.open) }}
       >
-        <IconDatabaseOutline16 />
+        <IconDatabaseOutlineRegular />
         <span className="cst-pills-label">
           {totalText}
           {cacheHitText !== null && (
@@ -336,7 +340,7 @@ function UsagePill({ usage, t, dialog }: {
         <StatDialogPanel
           seat={seat}
           label={t('pills.dialog.usageTitle')}
-          titleIcon={<IconDatabaseOutline16 />}
+          titleIcon={<IconDatabaseOutlineRegular />}
           titleValue={exactCount(total)}
           rows={(
             <>

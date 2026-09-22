@@ -277,7 +277,7 @@ dsh plugin --profile web add ./dsh-style-tweaks-0.1.4.tgz
 
 ## 工作原理
 
-- **服务端**（`src/index.ts`）：注册 `style-tweaks` 设置命名空间，并挂载同源路由 `/_dsh/style-tweaks/settings`。
+- **服务端**（`src/index.ts`）：声明 `style-tweaks` 设置命名空间，并挂载同源路由 `/_dsh/style-tweaks/settings`。DSH 0.1.7 起命名空间就是本插件 entry 自己的 Config（entry id 即命名空间，字段带 `.volatile()` 标记，取值落在 profile patch 的 `config` 里）；更早的宿主走 `ctx.settings.register`，命名空间仍是同一个。
 - **浏览器端**（`src/client/index.tsx`）：读写该路由、渲染设置页，并根据每个开关的状态实时挂载 / 卸载对应的调整项（纯 CSS 调整项注入运行时 `<style>` 元素；JS 级调整项还会读写应用自身的状态 store 并修补 DOM）。
 - **列宽样式引擎**（`src/client/conversation-width.ts`）：写入 `--dsh-chat-user-width` CSS 变量，并在插件接管列宽时隐藏原生 `[data-width-handle]` 拖拽手柄；宽度值同时镜像到原生手柄读取的 localStorage 槽位，开关切换时无缝往返。
 - **调整项注册表**（`src/client/tweaks/registry.ts`）：每个调整项的元数据（id、settings 字段名、默认值、i18n 键）集中登记；新增调整项只需在注册表里加一条，并在 `src/client/tweaks/` 下新增一个注入文件。
