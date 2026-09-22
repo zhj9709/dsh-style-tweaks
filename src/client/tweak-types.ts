@@ -43,8 +43,8 @@ export interface ResolvedStyleTweaksConfig {
   legacyStatsLine: boolean
   /** Whether the pills-cache-hit-decimals tweak is enabled. */
   pillsCacheHitDecimals: boolean
-  /** Whether the turn-speed-metrics tweak is enabled. */
-  turnSpeedMetrics: boolean
+  /** Whether the removed turn-time pill (with its dialog) is restored. */
+  turnTimePill: boolean
   /** Whether the context capsule's hover tooltip is suppressed. */
   contextPillNoTooltip: boolean
   /** Whether the pre-alpha.2 context ring is rendered inside the input card. */

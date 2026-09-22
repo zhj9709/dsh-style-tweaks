@@ -113,11 +113,13 @@ export const TWEAKS: readonly TweakDescriptor[] = [
     descriptionKey: 'tweak.pillsCacheHitDecimals.description',
   },
   {
-    id: 'turn-speed-metrics',
-    settingKey: 'turnSpeedMetrics',
+    id: 'turn-time-pill',
+    settingKey: 'turnTimePill',
+    // Off: the pill is the affordance 0.1.7-alpha.1 removed; putting it back
+    // is opt-in, like the other restorations of dropped chrome.
     defaultEnabled: false,
-    titleKey: 'tweak.turnSpeedMetrics.title',
-    descriptionKey: 'tweak.turnSpeedMetrics.description',
+    titleKey: 'tweak.turnTimePill.title',
+    descriptionKey: 'tweak.turnTimePill.description',
   },
   {
     id: 'legacy-context-meter',

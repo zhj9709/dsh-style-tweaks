@@ -54,7 +54,7 @@ import { installThinkingScrollStyles } from './tweaks/thinking-scroll.ts'
 import { installRightbarInitialWidth } from './tweaks/rightbar-initial-width.ts'
 import { setupLegacyStatsLine } from './tweaks/legacy-stats-line.tsx'
 import { setupPillsCacheHitDecimals } from './tweaks/pills-cache-hit-decimals.tsx'
-import { setupTurnSpeedMetrics } from './tweaks/turn-speed-metrics.tsx'
+import { setupTurnTimePill } from './tweaks/turn-time-pill.tsx'
 import { injectContextPillNoTooltipStyles } from './tweaks/context-pill-no-tooltip.ts'
 import { setupLegacyContextMeter } from './tweaks/legacy-context-meter.tsx'
 import { closedWorkspaceEntries, restoreClosedWorkspace, setupWorkspaceClose } from './tweaks/workspace-close.ts'
@@ -87,7 +87,7 @@ const TWEAK_INJECTORS: Record<string, (ctx: ClientContext, resolved: ResolvedTwe
   'sidebar-middle-click-close': setupSidebarMiddleClickClose,
   'legacy-stats-line': (ctx, resolved) => setupLegacyStatsLine(ctx, resolved.pillsCacheHitDecimals),
   'pills-cache-hit-decimals': setupPillsCacheHitDecimals,
-  'turn-speed-metrics': setupTurnSpeedMetrics,
+  'turn-time-pill': setupTurnTimePill,
   'context-pill-no-tooltip': () => injectContextPillNoTooltipStyles(),
   'legacy-context-meter': setupLegacyContextMeter,
   'workspace-close': (ctx, resolved, settings) => setupWorkspaceClose(ctx, resolved, settings),
@@ -193,8 +193,13 @@ const en = {
   'tweak.legacyStatsLine.description': 'Show the composer stats the way DSH did before 0.1.5: one centered text line under the input box (turns/steps, LLM & tool time, TTFT, speed, tokens, cache hit) instead of the new icon pills. Full line on hover.',
   'tweak.pillsCacheHitDecimals.title': 'Cache hit with two decimals',
   'tweak.pillsCacheHitDecimals.description': 'Show the composer stats\' cache-hit share with two decimal places (87.35%) instead of integer rounding — applies to the new icon pills and the legacy text line alike, whichever is showing.',
-  'tweak.turnSpeedMetrics.title': 'Turn speed & TTFT',
-  'tweak.turnSpeedMetrics.description': 'Since 0.1.5, cold sessions no longer rebuild per-token timing, so the turn-time dialog keeps only the wall-clock duration. Refills that dialog with the output speed and TTFT rows (rebuilt from the model stream embedded in the session log) when you click the time pill.',
+  'tweak.turnTimePill.title': 'Turn time pill',
+  'tweak.turnTimePill.description': 'Through 0.1.6 a settled turn ended with two stat pills: usage and time, each opening its own dialog. 0.1.7-alpha.1 dropped the time half. This puts it back right of the usage pill, with its 本轮用时和速度 dialog: the turn\'s total run time, plus output speed (TPS) and time to first token (TTFT), rebuilt from the model stream embedded in the session log — so history loads show them too.',
+  'tweak.turnTimePill.label': 'Ran for {duration}',
+  'tweak.turnTimePill.pillTitle': 'Turn time and speed',
+  'tweak.turnTimePill.duration': 'Total run time',
+  'tweak.turnTimePill.speed': 'Tokens per second (TPS)',
+  'tweak.turnTimePill.ttft': 'Time to first token (TTFT)',
   'tweak.contextPillNoTooltip.title': 'No context pill hover info',
   'tweak.contextPillNoTooltip.description': 'Hovering the context capsule under the input box (DSH 0.1.6-alpha.2+) no longer floats the "13% of context used" tooltip. The capsule\'s hover highlight and its click-open breakdown dialog are untouched; hosts without the capsule leave this inert.',
   'tweak.legacyContextMeter.title': 'Context ring in the input card',
@@ -312,8 +317,13 @@ const zh: Record<LocaleKey, string> = {
   'tweak.legacyStatsLine.description': '以 0.1.5 之前的样式，在输入框下方显示一行居中的文本统计（轮数/步数、模型与工具耗时、首字延迟、输出速度、Token 用量、缓存命中），替代新版图标胶囊；悬停可查看完整内容。',
   'tweak.pillsCacheHitDecimals.title': '缓存命中两位小数',
   'tweak.pillsCacheHitDecimals.description': '缓存命中率按两位小数显示（如 87.35%），不再取整；无论统计信息以新版图标胶囊还是经典文本行展示，均适用。',
-  'tweak.turnSpeedMetrics.title': '轮次速度与首 token 用时',
-  'tweak.turnSpeedMetrics.description': '0.1.5 起冷会话不再重建逐 token 时序，"本轮用时和速度"弹窗只剩总用时。开启后点击用时胶囊时，弹窗会回填输出速度与首 token 用时两行（由会话日志内嵌的模型流重建，历史会话同样生效）。',
+  'tweak.turnTimePill.title': '用时胶囊',
+  'tweak.turnTimePill.description': '0.1.6 及之前，一轮结束后行尾有两颗统计胶囊：用量和用时，各自点开一个弹窗；0.1.7-alpha.1 去掉了用时那一颗。开启本项把它加回用量胶囊右边，连同「本轮用时和速度」弹窗：本轮总用时，以及输出速度（TPS）与首 token 用时（TTFT）——后两项由会话日志内嵌的模型流重建，历史会话同样显示。',
+  'tweak.turnTimePill.label': '用时 {duration}',
+  'tweak.turnTimePill.pillTitle': '本轮用时和速度',
+  'tweak.turnTimePill.duration': '本轮总用时',
+  'tweak.turnTimePill.speed': '输出速度（TPS）',
+  'tweak.turnTimePill.ttft': '首 token 用时（TTFT）',
   'tweak.contextPillNoTooltip.title': '上下文胶囊不显示悬停信息',
   'tweak.contextPillNoTooltip.description': '鼠标移到输入框下方的上下文胶囊上（0.1.6-alpha.2+ 新增）时，不再浮出"上下文已用 13%"的悬停提示。胶囊自身的悬停高亮与点开的明细弹窗不受影响；没有该胶囊的宿主上本项保持惰性。',
   'tweak.legacyContextMeter.title': '上下文圆环回到输入框内',

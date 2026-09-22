@@ -235,16 +235,22 @@ export interface StyleTweaksConfig {
    */
   legacyContextMeter?: boolean
   /**
-   * Rebuild the turn footer's 输出速度 (TPS) and 首 token 用时 (TTFT) — the
-   * two "本轮用时和速度" figures session format v2 (0.1.5) dropped from cold
-   * presentation: the Chat UI no longer replays the model stream embedded in
-   * each durable settlement, so only the wall-clock duration survives a
-   * reload. While this tweak is on, the plugin reads the settlements out of
-   * the session's event window (the documented Conversation-assembly feed)
-   * and shows the two figures in each settled turn's action row. Default
-   * off: the stock footer keeps its shipped shape.
+   * Put the turn-time pill back at the end of a settled turn: through 0.1.6
+   * the tail's action row ended with two stat pills (usage and time, each
+   * click-opening a dialog), and 0.1.7-alpha.1 removed the time half together
+   * with its `message.turnTime.*` vocabulary. On: a clock pill labelled with
+   * the turn's wall time sits right of the usage pill and opens the ported
+   * 本轮用时和速度 dialog — total run time, plus output speed (TPS) and time
+   * to first token (TTFT) when the session log can rebuild them (session
+   * format v2 embeds each model attempt's timed stream in its settlement, but
+   * the Chat UI's cold presentation never replays it, so those two figures
+   * are otherwise lost). The wall time is folded from the log
+   * (`turn/start` → `turn/end`) and the other two from the embedded streams,
+   * so history loads get them too; a turn whose timing the loaded window does
+   * not hold shows the stock row. Off (default): the 0.1.7 tail stays as
+   * shipped.
    */
-  turnSpeedMetrics?: boolean
+  turnTimePill?: boolean
   /**
    * Let the user "close" a Workspace — hide it from the sidebar browser and
    * the New Session picker without deleting anything. Off (default): the
@@ -352,8 +358,12 @@ export const DEFAULT_SIDEBAR_MIDDLE_CLICK_CLOSE = true
 export const DEFAULT_LEGACY_STATS_LINE = false
 /** Default: off — integer cache-hit percent, as shipped. */
 export const DEFAULT_PILLS_CACHE_HIT_DECIMALS = false
-/** Default: off — the turn footer keeps its shipped shape. */
-export const DEFAULT_TURN_SPEED_METRICS = false
+/**
+ * Default: off — the time pill is the affordance 0.1.7-alpha.1 removed;
+ * restoring it (with its dialog) is opt-in, like the other restorations of
+ * dropped chrome.
+ */
+export const DEFAULT_TURN_TIME_PILL = false
 /**
  * Default: off — the context capsule keeps its shipped hover tooltip until
  * the user opts into hiding it.
@@ -415,7 +425,7 @@ export const Config: Schema<StyleTweaksConfig> = z.object({
   sidebarMiddleClickClose: live(z.boolean().default(DEFAULT_SIDEBAR_MIDDLE_CLICK_CLOSE)),
   legacyStatsLine: live(z.boolean().default(DEFAULT_LEGACY_STATS_LINE)),
   pillsCacheHitDecimals: live(z.boolean().default(DEFAULT_PILLS_CACHE_HIT_DECIMALS)),
-  turnSpeedMetrics: live(z.boolean().default(DEFAULT_TURN_SPEED_METRICS)),
+  turnTimePill: live(z.boolean().default(DEFAULT_TURN_TIME_PILL)),
   contextPillNoTooltip: live(z.boolean().default(DEFAULT_CONTEXT_PILL_NO_TOOLTIP)),
   legacyContextMeter: live(z.boolean().default(DEFAULT_LEGACY_CONTEXT_METER)),
   workspaceClose: live(z.boolean().default(DEFAULT_WORKSPACE_CLOSE)),
@@ -461,8 +471,8 @@ export interface ResolvedStyleTweaksConfig {
   legacyStatsLine: boolean
   /** Whether the pills-cache-hit-decimals tweak is enabled. */
   pillsCacheHitDecimals: boolean
-  /** Whether the turn-speed-metrics tweak is enabled. */
-  turnSpeedMetrics: boolean
+  /** Whether the removed turn-time pill (with its dialog) is restored. */
+  turnTimePill: boolean
   /** Whether the context capsule's hover tooltip is suppressed. */
   contextPillNoTooltip: boolean
   /** Whether the pre-alpha.2 context ring is rendered inside the input card. */
@@ -502,7 +512,7 @@ export function resolveConfig(config: StyleTweaksConfig = {}): ResolvedStyleTwea
     sidebarMiddleClickClose: config.sidebarMiddleClickClose ?? DEFAULT_SIDEBAR_MIDDLE_CLICK_CLOSE,
     legacyStatsLine: config.legacyStatsLine ?? DEFAULT_LEGACY_STATS_LINE,
     pillsCacheHitDecimals: config.pillsCacheHitDecimals ?? DEFAULT_PILLS_CACHE_HIT_DECIMALS,
-    turnSpeedMetrics: config.turnSpeedMetrics ?? DEFAULT_TURN_SPEED_METRICS,
+    turnTimePill: config.turnTimePill ?? DEFAULT_TURN_TIME_PILL,
     contextPillNoTooltip: config.contextPillNoTooltip ?? DEFAULT_CONTEXT_PILL_NO_TOOLTIP,
     legacyContextMeter: config.legacyContextMeter ?? DEFAULT_LEGACY_CONTEXT_METER,
     workspaceClose: config.workspaceClose ?? DEFAULT_WORKSPACE_CLOSE,

@@ -271,3 +271,43 @@ export function deriveTurnSpeedMetrics(
     ? metrics
     : undefined
 }
+
+/**
+ * One turn's wall-clock run time from the event window: its `turn/end`
+ * timestamp minus its `turn/start` timestamp — the figure 0.1.6's footer
+ * printed as "用时 …" (`turn.end.time - turn.start.time` over the Chat
+ * snapshot's turn location).
+ *
+ * A turn with no `turn/end` in the loaded window (interrupted before it
+ * settled, or an end event evicted by the window's cap) falls back to the last
+ * event the window holds for that turn, so the pill still carries a duration
+ * instead of vanishing; the value can only be short by the tail of the turn,
+ * never inflated.
+ * @param entries - The binding event window's entries (any version's shape).
+ * @param turn - The turn number to measure.
+ * @returns The run time in ms, or undefined when the window holds no start.
+ */
+export function deriveTurnRunMs(entries: readonly unknown[], turn: number): number | undefined {
+  let start: number | undefined
+  let end: number | undefined
+  let last: number | undefined
+  for (const entry of entries) {
+    const event = entryEvent(entry)
+    if (event === undefined) continue
+    const data = event.data as { readonly turn?: unknown } | undefined
+    if (data === undefined || data.turn !== turn) continue
+    if (event.type === 'turn/start') {
+      if (start === undefined) start = event.time
+      continue
+    }
+    if (event.type === 'turn/end') {
+      end = event.time
+      continue
+    }
+    if (last === undefined || event.time > last) last = event.time
+  }
+  if (start === undefined) return undefined
+  const finish = end ?? last
+  if (finish === undefined) return undefined
+  return Math.max(0, finish - start)
+}
