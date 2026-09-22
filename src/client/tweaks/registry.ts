@@ -122,6 +122,16 @@ export const TWEAKS: readonly TweakDescriptor[] = [
     descriptionKey: 'tweak.turnTimePill.description',
   },
   {
+    id: 'turn-process-counts',
+    settingKey: 'turnProcessCounts',
+    // Off: the header's elapsed time is 0.1.7-alpha.1's shipped label; putting
+    // the 0.1.6 tally back next to it is opt-in, like the other restorations
+    // of dropped chrome.
+    defaultEnabled: false,
+    titleKey: 'tweak.turnProcessCounts.title',
+    descriptionKey: 'tweak.turnProcessCounts.description',
+  },
+  {
     id: 'legacy-context-meter',
     settingKey: 'legacyContextMeter',
     // Off: the capsule is 0.1.6-alpha.2's shipped affordance; the pre-alpha.2

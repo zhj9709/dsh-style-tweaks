@@ -45,6 +45,8 @@ export interface ResolvedStyleTweaksConfig {
   pillsCacheHitDecimals: boolean
   /** Whether the removed turn-time pill (with its dialog) is restored. */
   turnTimePill: boolean
+  /** Whether the folded process group's header carries the 0.1.6 counts again. */
+  turnProcessCounts: boolean
   /** Whether the context capsule's hover tooltip is suppressed. */
   contextPillNoTooltip: boolean
   /** Whether the pre-alpha.2 context ring is rendered inside the input card. */

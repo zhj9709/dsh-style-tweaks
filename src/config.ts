@@ -252,6 +252,19 @@ export interface StyleTweaksConfig {
    */
   turnTimePill?: boolean
   /**
+   * Put the 0.1.6 counts back on the folded process group's header: through
+   * 0.1.6 that header was a tally (tool calls · messages, plus subagents when
+   * the turn spawned any), and 0.1.7-alpha.1's performance-and-usage
+   * preference replaced the label with the elapsed time. The counts survived
+   * the change — the node data still carries them and the disclosure button
+   * still publishes them as its `data-turn-process-*` attributes — so the
+   * tweak appends the 0.1.6 tally to whatever the header says (`用时 …` plus
+   * the counts, both live; the other header states read the same way). A turn
+   * with no counted work keeps the stock header. Off (default): the 0.1.7
+   * header stays as shipped.
+   */
+  turnProcessCounts?: boolean
+  /**
    * Let the user "close" a Workspace — hide it from the sidebar browser and
    * the New Session picker without deleting anything. Off (default): the
    * stock list stays complete. On: the Workspace disappears from every
@@ -365,6 +378,12 @@ export const DEFAULT_PILLS_CACHE_HIT_DECIMALS = false
  */
 export const DEFAULT_TURN_TIME_PILL = false
 /**
+ * Default: off — the header's elapsed time is 0.1.7-alpha.1's shipped label;
+ * adding the 0.1.6 tally back next to it is opt-in, like the other
+ * restorations of dropped chrome.
+ */
+export const DEFAULT_TURN_PROCESS_COUNTS = false
+/**
  * Default: off — the context capsule keeps its shipped hover tooltip until
  * the user opts into hiding it.
  */
@@ -426,6 +445,7 @@ export const Config: Schema<StyleTweaksConfig> = z.object({
   legacyStatsLine: live(z.boolean().default(DEFAULT_LEGACY_STATS_LINE)),
   pillsCacheHitDecimals: live(z.boolean().default(DEFAULT_PILLS_CACHE_HIT_DECIMALS)),
   turnTimePill: live(z.boolean().default(DEFAULT_TURN_TIME_PILL)),
+  turnProcessCounts: live(z.boolean().default(DEFAULT_TURN_PROCESS_COUNTS)),
   contextPillNoTooltip: live(z.boolean().default(DEFAULT_CONTEXT_PILL_NO_TOOLTIP)),
   legacyContextMeter: live(z.boolean().default(DEFAULT_LEGACY_CONTEXT_METER)),
   workspaceClose: live(z.boolean().default(DEFAULT_WORKSPACE_CLOSE)),
@@ -473,6 +493,8 @@ export interface ResolvedStyleTweaksConfig {
   pillsCacheHitDecimals: boolean
   /** Whether the removed turn-time pill (with its dialog) is restored. */
   turnTimePill: boolean
+  /** Whether the folded process group's header carries the 0.1.6 counts again. */
+  turnProcessCounts: boolean
   /** Whether the context capsule's hover tooltip is suppressed. */
   contextPillNoTooltip: boolean
   /** Whether the pre-alpha.2 context ring is rendered inside the input card. */
@@ -513,6 +535,7 @@ export function resolveConfig(config: StyleTweaksConfig = {}): ResolvedStyleTwea
     legacyStatsLine: config.legacyStatsLine ?? DEFAULT_LEGACY_STATS_LINE,
     pillsCacheHitDecimals: config.pillsCacheHitDecimals ?? DEFAULT_PILLS_CACHE_HIT_DECIMALS,
     turnTimePill: config.turnTimePill ?? DEFAULT_TURN_TIME_PILL,
+    turnProcessCounts: config.turnProcessCounts ?? DEFAULT_TURN_PROCESS_COUNTS,
     contextPillNoTooltip: config.contextPillNoTooltip ?? DEFAULT_CONTEXT_PILL_NO_TOOLTIP,
     legacyContextMeter: config.legacyContextMeter ?? DEFAULT_LEGACY_CONTEXT_METER,
     workspaceClose: config.workspaceClose ?? DEFAULT_WORKSPACE_CLOSE,

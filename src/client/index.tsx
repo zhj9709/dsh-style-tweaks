@@ -55,6 +55,7 @@ import { installRightbarInitialWidth } from './tweaks/rightbar-initial-width.ts'
 import { setupLegacyStatsLine } from './tweaks/legacy-stats-line.tsx'
 import { setupPillsCacheHitDecimals } from './tweaks/pills-cache-hit-decimals.tsx'
 import { setupTurnTimePill } from './tweaks/turn-time-pill.tsx'
+import { setupTurnProcessCounts } from './tweaks/turn-process-counts.ts'
 import { injectContextPillNoTooltipStyles } from './tweaks/context-pill-no-tooltip.ts'
 import { setupLegacyContextMeter } from './tweaks/legacy-context-meter.tsx'
 import { closedWorkspaceEntries, restoreClosedWorkspace, setupWorkspaceClose } from './tweaks/workspace-close.ts'
@@ -88,6 +89,7 @@ const TWEAK_INJECTORS: Record<string, (ctx: ClientContext, resolved: ResolvedTwe
   'legacy-stats-line': (ctx, resolved) => setupLegacyStatsLine(ctx, resolved.pillsCacheHitDecimals),
   'pills-cache-hit-decimals': setupPillsCacheHitDecimals,
   'turn-time-pill': setupTurnTimePill,
+  'turn-process-counts': setupTurnProcessCounts,
   'context-pill-no-tooltip': () => injectContextPillNoTooltipStyles(),
   'legacy-context-meter': setupLegacyContextMeter,
   'workspace-close': (ctx, resolved, settings) => setupWorkspaceClose(ctx, resolved, settings),
@@ -200,6 +202,8 @@ const en = {
   'tweak.turnTimePill.duration': 'Total run time',
   'tweak.turnTimePill.speed': 'Tokens per second (TPS)',
   'tweak.turnTimePill.ttft': 'Time to first token (TTFT)',
+  'tweak.turnProcessCounts.title': 'Call counts on process groups',
+  'tweak.turnProcessCounts.description': 'Through 0.1.6 the header of a folded process group was a tally: tool calls and messages, plus subagents when the turn spawned any. 0.1.7-alpha.1 replaced it with the elapsed time. This puts the 0.1.6 tally back after the time, so both halves show at once — the counts grow while the turn runs, and the failed / stopped / running headers read the same way. A turn with nothing to count is left as shipped.',
   'tweak.contextPillNoTooltip.title': 'No context pill hover info',
   'tweak.contextPillNoTooltip.description': 'Hovering the context capsule under the input box (DSH 0.1.6-alpha.2+) no longer floats the "13% of context used" tooltip. The capsule\'s hover highlight and its click-open breakdown dialog are untouched; hosts without the capsule leave this inert.',
   'tweak.legacyContextMeter.title': 'Context ring in the input card',
@@ -324,6 +328,8 @@ const zh: Record<LocaleKey, string> = {
   'tweak.turnTimePill.duration': '本轮总用时',
   'tweak.turnTimePill.speed': '输出速度（TPS）',
   'tweak.turnTimePill.ttft': '首 token 用时（TTFT）',
+  'tweak.turnProcessCounts.title': '过程组显示调用次数',
+  'tweak.turnProcessCounts.description': '0.1.6 及之前，折叠过程组的标题是一行计数：工具调用次数与消息条数，轮次起了子代理时还带 subagent 数；0.1.7-alpha.1 把它换成了用时。开启本项把 0.1.6 的计数接在用时后面，两半同时显示，计数随轮次进行实时增长，失败 / 停止 / 生成中的标题同样适用；没有可计数内容的轮次保持原样。',
   'tweak.contextPillNoTooltip.title': '上下文胶囊不显示悬停信息',
   'tweak.contextPillNoTooltip.description': '鼠标移到输入框下方的上下文胶囊上（0.1.6-alpha.2+ 新增）时，不再浮出"上下文已用 13%"的悬停提示。胶囊自身的悬停高亮与点开的明细弹窗不受影响；没有该胶囊的宿主上本项保持惰性。',
   'tweak.legacyContextMeter.title': '上下文圆环回到输入框内',

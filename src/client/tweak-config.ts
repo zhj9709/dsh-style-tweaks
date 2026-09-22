@@ -62,6 +62,8 @@ export const DEFAULT_LEGACY_STATS_LINE = false
 export const DEFAULT_PILLS_CACHE_HIT_DECIMALS = false
 /** Default state of the turn-time-pill tweak (off: the 0.1.7 tail stays as shipped). */
 export const DEFAULT_TURN_TIME_PILL = false
+/** Default state of the turn-process-counts tweak (off: the 0.1.7 header stays as shipped). */
+export const DEFAULT_TURN_PROCESS_COUNTS = false
 /** Default state of the context-pill-no-tooltip tweak (off: the shipped tooltip stays). */
 export const DEFAULT_CONTEXT_PILL_NO_TOOLTIP = false
 /** Default state of the legacy-context-meter tweak (off: the alpha.2 capsule stays). */
@@ -181,6 +183,7 @@ export function resolveClientConfig(
     legacyStatsLine: value?.legacyStatsLine ?? DEFAULT_LEGACY_STATS_LINE,
     pillsCacheHitDecimals: value?.pillsCacheHitDecimals ?? DEFAULT_PILLS_CACHE_HIT_DECIMALS,
     turnTimePill: value?.turnTimePill ?? DEFAULT_TURN_TIME_PILL,
+    turnProcessCounts: value?.turnProcessCounts ?? DEFAULT_TURN_PROCESS_COUNTS,
     contextPillNoTooltip: value?.contextPillNoTooltip ?? DEFAULT_CONTEXT_PILL_NO_TOOLTIP,
     legacyContextMeter: value?.legacyContextMeter ?? DEFAULT_LEGACY_CONTEXT_METER,
     workspaceClose: value?.workspaceClose ?? DEFAULT_WORKSPACE_CLOSE,
