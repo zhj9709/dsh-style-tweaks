@@ -25,6 +25,17 @@
  * `!important` decides) so the hover state no longer drops the ellipsis,
  * matching alpha.1's always-ellipsis look.
  *
+ * A second rule turns off the marquee's edge fade masks. The host publishes
+ * them as `data-scrolled` (left edge fades in over 12px once the marquee has
+ * left the start) and `data-clipped` (right edge fades while text remains
+ * beyond the cell) on the title span, but `Rows.tsx`'s `placeTitle` sets them
+ * from the position the marquee *asked* for, not from the element's actual
+ * `scrollLeft`. With the title pinned at the start, `data-scrolled` still
+ * arrives, so the left fade lands on the title's own first characters — the
+ * text under the pointer starts out smudged and the smudge stays for as long
+ * as the row is hovered. Neither edge has a legitimate fade to draw while the
+ * title never moves, so both are switched off.
+ *
  * ## Selector safety
  *
  * The scoping is structural: session rows are the workspace browser's
@@ -43,6 +54,11 @@ const STABLE_SESSION_TITLE_CSS = `
 [role="treeitem"]:not([aria-expanded]) [class$="_title"] {
   overflow: clip !important;
   text-overflow: ellipsis !important;
+}
+
+[role="treeitem"]:not([aria-expanded]) [class$="_title"][data-scrolled],
+[role="treeitem"]:not([aria-expanded]) [class$="_title"][data-clipped] {
+  mask-image: none !important;
 }
 `
 
