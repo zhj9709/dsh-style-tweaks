@@ -35,8 +35,8 @@
  *
  * ## Fix
  *
- * Two rules on the stable `.md-code-block` hook (the same hand-written class
- * `stable-table.ts` uses for `.md-table-wide`):
+ * Two rules on the stable `.md-code-block` hook (one of the hand-written
+ * classes DSH reserves for plugins and extensions, like `.md-table-wide`):
  *
  *   - `.md-code-block { margin-top: 0 !important }` collapses the outer
  *     gap above the box. Only `margin-top` is touched: writing a full

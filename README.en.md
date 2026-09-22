@@ -18,7 +18,6 @@ A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) web 
 
 ### Tweaks
 
-- **Stable table layout (default on)** — locks table layout on hover so surrounding content does not reflow ("text jumps when I hover a table").
 - **Stable turn-navigation rail (default on)** — keeps the turn-navigation rail at a stable position when scrolling up past the first message into the system prompt area (no longer drops by ~16 px).
 - **Stable session titles (default off)** — since 0.1.6-alpha.2, hovering a session row smoothly slides an overlong title to its end to reveal the clipped tail, and it snaps back on leaving. This restores the pre-0.1.6-alpha.2 behaviour: the title stays put with its ellipsis at all times; the row's hover card (pause a moment) still shows the full title.
 - **Always show turn navigation (default off)** — DSH hides the turn-navigation rail once the chat column's content box reaches 900 px (a container query in `TurnNavigator.module.css` measured against the chat scrollport). Widening the right sidebar is exactly what triggers it: the center column may be squeezed down to 400 px, so the rail disappears over almost the panel's whole usable range. With this ON the rail stays at every chat width; at narrow widths it sits in the scrollport's right gutter and its hover preview covers part of the transcript.
@@ -50,7 +49,6 @@ style-tweaks:
   historyPageSize: 200             # 50–1000; shown/effective only while historyPageSizeEnabled is on
   historyPageSizeColdStart: true   # default true; a session's first screen uses that size too; the row hides while the size is 50
   # Tweaks
-  stableTable: true                # default true; false disables the tweak
   stableTurnRail: true             # default true; false disables the tweak
   stableSessionTitle: false        # default false; true keeps session titles put with their ellipsis on hover
   keepTurnRail: false              # default false; true keeps the turn-navigation rail at every chat width

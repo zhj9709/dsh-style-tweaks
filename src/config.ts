@@ -11,8 +11,9 @@
  * validated there. Two feature areas:
  *   1. Column-width control (ported from dsh-dialog-width): a px input
  *      (600–1600) with presets, a plugin-vs-native toggle, and side margin.
- *   2. Opt-in CSS tweaks (stable-table layout on hover, with more added
- *      over time). Each tweak is a boolean field.
+ *   2. Opt-in CSS tweaks (small fixes for the sidebar and the settings
+ *      panel, e.g. holding the turn-navigation rail in place, with more
+ *      added over time). Each tweak is a boolean field.
  * @module dsh-style-tweaks/config
  */
 
@@ -109,14 +110,6 @@ export interface StyleTweaksConfig {
   rightbarWidthPercent?: number
 
   // ── CSS tweaks ───────────────────────────────────────────────────────
-  /**
-   * Lock markdown table layout on hover so the table does not reflow and push
-   * surrounding content around. Fixes the "text jumps when I hover a table"
-   * layout-shift bug reported against the stock conversation view. Only
-   * needed on hosts older than DSH 0.1.6-alpha.1, which fixed the bug
-   * upstream; off by default.
-   */
-  stableTable?: boolean
   /**
    * Keep the turn-navigation rail at a stable position when scrolling up
    * past the first message into the system-prompt area. Without this fix
@@ -315,11 +308,6 @@ export const MAX_HISTORY_PAGE_SIZE = 1000
 export const STEP_HISTORY_PAGE_SIZE = 50
 
 // ── CSS tweak constants ─────────────────────────────────────────────────
-/**
- * Default: off — DSH 0.1.6-alpha.1 fixed the hover reflow upstream, so the
- * tweak is only needed on older hosts.
- */
-export const DEFAULT_STABLE_TABLE = false
 /** Default: every shipped tweak is on. */
 export const DEFAULT_STABLE_TURN_RAIL = true
 /**
@@ -401,7 +389,6 @@ export const Config: Schema<StyleTweaksConfig> = z.object({
   sideMargin: live(z.number().min(MIN_SIDE_MARGIN).default(DEFAULT_SIDE_MARGIN)),
   thinkFixedHeight: live(z.boolean().default(DEFAULT_THINK_FIXED_HEIGHT)),
   thinkHeight: live(z.number().min(MIN_THINK_HEIGHT).max(MAX_THINK_HEIGHT).default(DEFAULT_THINK_HEIGHT)),
-  stableTable: live(z.boolean().default(DEFAULT_STABLE_TABLE)),
   stableTurnRail: live(z.boolean().default(DEFAULT_STABLE_TURN_RAIL)),
   stableSessionTitle: live(z.boolean().default(DEFAULT_STABLE_SESSION_TITLE)),
   keepTurnRail: live(z.boolean().default(DEFAULT_KEEP_TURN_RAIL)),
@@ -436,8 +423,6 @@ export interface ResolvedStyleTweaksConfig {
   thinkFixedHeight: boolean
   /** Think body display height in px while `thinkFixedHeight` is on. */
   thinkHeight: number
-  /** Whether the stable-table tweak is enabled. */
-  stableTable: boolean
   /** Whether the stable-turn-rail tweak is enabled. */
   stableTurnRail: boolean
   /** Whether the session titles stay put with their ellipsis on hover. */
@@ -488,7 +473,6 @@ export function resolveConfig(config: StyleTweaksConfig = {}): ResolvedStyleTwea
     sideMargin: config.sideMargin ?? DEFAULT_SIDE_MARGIN,
     thinkFixedHeight: config.thinkFixedHeight ?? DEFAULT_THINK_FIXED_HEIGHT,
     thinkHeight: resolveThinkHeight(config.thinkHeight),
-    stableTable: config.stableTable ?? DEFAULT_STABLE_TABLE,
     stableTurnRail: config.stableTurnRail ?? DEFAULT_STABLE_TURN_RAIL,
     stableSessionTitle: config.stableSessionTitle ?? DEFAULT_STABLE_SESSION_TITLE,
     keepTurnRail: config.keepTurnRail ?? DEFAULT_KEEP_TURN_RAIL,

@@ -5,8 +5,9 @@
  * panel:
  *   1. Column-width control (ported from dsh-dialog-width): px stepper,
  *      presets, plugin-vs-native toggle, side margin.
- *   2. Opt-in CSS tweaks: stable-table layout on hover, with more added
- *      over time. Each tweak is a boolean field.
+ *   2. Opt-in CSS tweaks: small fixes for the sidebar and the settings
+ *      panel (e.g. holding the turn-navigation rail in place), with more
+ *      added over time. Each tweak is a boolean field.
  *
  * Reads and writes the `style-tweaks` settings namespace via
  * the same-origin route served by the server half.
@@ -40,7 +41,6 @@ import {
 } from './tweak-config.ts'
 import type { ResolvedStyleTweaksConfig } from './tweak-types.ts'
 import { TWEAKS, type TweakDescriptor } from './tweaks/registry.ts'
-import { injectStableTableStyles } from './tweaks/stable-table.ts'
 import { injectStableSessionTitleStyles } from './tweaks/stable-session-title.ts'
 import { injectStableTurnRailStyles } from './tweaks/stable-turn-rail.ts'
 import { injectKeepTurnRailStyles } from './tweaks/keep-turn-rail.ts'
@@ -75,7 +75,6 @@ const SETTINGS_ROUTE = '/_dsh/style-tweaks/settings'
  * change remounts every tweak, so the capture never goes stale).
  */
 const TWEAK_INJECTORS: Record<string, (ctx: ClientContext, resolved: ResolvedTweaks, settings: SettingsClient) => () => void> = {
-  'stable-table': () => injectStableTableStyles(),
   'stable-turn-rail': () => injectStableTurnRailStyles(),
   'stable-session-title': () => injectStableSessionTitleStyles(),
   'keep-turn-rail': () => injectKeepTurnRailStyles(),
@@ -170,8 +169,6 @@ const en = {
   readOnly: 'The active Settings provider is read-only.',
   tweakOn: 'On',
   tweakOff: 'Off',
-  'tweak.stableTable.title': 'Stable table layout',
-  'tweak.stableTable.description': 'Backport of the DSH 0.1.6-alpha.1 fix: on hover the reserved scrollbar slot exactly replaces the removed padding, so surrounding content does not reflow ("text jumps when I hover a table"). Only needed on hosts older than 0.1.6-alpha.1; a harmless duplicate on newer hosts. Off by default.',
   'tweak.stableTurnRail.title': 'Stable turn-navigation rail',
   'tweak.stableTurnRail.description': 'Keep the turn-navigation rail at a stable position when scrolling up past the first message into the system prompt ("the rail jumps down by ~16 px when I scroll up after clicking the first turn").',
   'tweak.stableSessionTitle.title': 'Stable session titles',
@@ -289,8 +286,6 @@ const zh: Record<LocaleKey, string> = {
   readOnly: '当前设置提供方为只读。',
   tweakOn: '开启',
   tweakOff: '关闭',
-  'tweak.stableTable.title': '表格布局稳定',
-  'tweak.stableTable.description': '回移 DSH 0.1.6-alpha.1 的官方修复：hover 时预留的滚动条槽位正好顶掉被移除的 padding，避免周围内容发生回流（"鼠标移到表格上时下方文本会跳动"）。仅需旧版 host 开启，新版上开启只是无害的重复规则。默认关闭。',
   'tweak.stableTurnRail.title': '轮次导航栏稳定',
   'tweak.stableTurnRail.description': '向上滚动到第一条消息上方的系统提示词区域时，让右侧轮次导航栏保持在原位（不再下移约 16 像素）。',
   'tweak.stableSessionTitle.title': '会话标题悬停稳定',

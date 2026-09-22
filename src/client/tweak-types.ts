@@ -21,8 +21,6 @@ export interface ResolvedStyleTweaksConfig {
   thinkFixedHeight: boolean
   /** Think body display height in px while `thinkFixedHeight` is on. */
   thinkHeight: number
-  /** Whether the stable-table tweak is enabled. */
-  stableTable: boolean
   /** Whether the stable-turn-rail tweak is enabled. */
   stableTurnRail: boolean
   /** Whether the session titles stay put with their ellipsis on hover. */

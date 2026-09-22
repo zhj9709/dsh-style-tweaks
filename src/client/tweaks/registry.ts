@@ -7,9 +7,9 @@
  */
 
 export interface TweakDescriptor {
-  /** Unique id, e.g. "stable-table". Doubles as the DOM data-tweak id. */
+  /** Unique id, e.g. "stable-turn-rail". Doubles as the DOM data-tweak id. */
   readonly id: string
-  /** Settings document field name, e.g. "stableTable". */
+  /** Settings document field name, e.g. "stableTurnRail". */
   readonly settingKey: string
   /** Default value when the field is absent from the settings document. */
   readonly defaultEnabled: boolean
@@ -31,14 +31,6 @@ export interface TweakDescriptor {
 
 /** All tweaks, in display order. Add new entries here. */
 export const TWEAKS: readonly TweakDescriptor[] = [
-  {
-    id: 'stable-table',
-    settingKey: 'stableTable',
-    // Off: DSH 0.1.6-alpha.1 fixed the hover reflow upstream.
-    defaultEnabled: false,
-    titleKey: 'tweak.stableTable.title',
-    descriptionKey: 'tweak.stableTable.description',
-  },
   {
     id: 'stable-turn-rail',
     settingKey: 'stableTurnRail',

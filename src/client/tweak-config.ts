@@ -38,8 +38,6 @@ export const MAX_THINK_HEIGHT = 1200
 export const CONVERSATION_WIDTH_STORAGE_KEY = 'dsh.conversation.contentWidth'
 
 // ── CSS tweak constants (mirror src/config.ts) ──────────────────────────
-/** Default state of the stable-table tweak (off: fixed upstream in DSH 0.1.6-alpha.1). */
-export const DEFAULT_STABLE_TABLE = false
 /** Default state of the stable-turn-rail tweak. */
 export const DEFAULT_STABLE_TURN_RAIL = true
 /** Default state of the stable-session-title tweak (off: the hover reveal stays). */
@@ -169,7 +167,6 @@ export function resolveClientConfig(
     sideMargin: resolveSideMargin(value?.sideMargin),
     thinkFixedHeight: value?.thinkFixedHeight ?? DEFAULT_THINK_FIXED_HEIGHT,
     thinkHeight: resolveThinkHeight(value?.thinkHeight),
-    stableTable: value?.stableTable ?? DEFAULT_STABLE_TABLE,
     stableTurnRail: value?.stableTurnRail ?? DEFAULT_STABLE_TURN_RAIL,
     stableSessionTitle: value?.stableSessionTitle ?? DEFAULT_STABLE_SESSION_TITLE,
     keepTurnRail: value?.keepTurnRail ?? DEFAULT_KEEP_TURN_RAIL,
