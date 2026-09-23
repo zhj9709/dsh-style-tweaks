@@ -37,6 +37,8 @@
 
 - **自定义历史分页大小（默认关闭）**：DSH 的历史加载每次固定 50 条（打开会话的首屏、每次点「加载更早」），长会话回看要点很多次。开启后每次请求按设定条数（50–1000，默认 200）携带；改写发生在浏览器发出的请求上——「加载更早」与轮次跳转共用的 unary `session/page`，以及打开会话首屏的 `session/follow` 开帧。三条边界：**分页只升不降**，「加载更早」原生 50 条、轮次跳转加载器原生 200 条，设置值超过它们时都会按设置值放大（因此调到 200 以上时每次轮次跳转也会一并变重）；**首屏由「打开会话时同样生效」（默认开启）单独控制**，关掉它则首屏保持原生 50 条、条数只影响「加载更早」，冷启动不受影响；**关闭主开关即回到 DSH 原生行为**，已保存的条数保留，重新开启时沿用。
 
+> 字段与默认值参考（设置面板自动维护）。**DSH 0.1.7+ 的实际存储是 `<profile>/.dsh-style-tweaks/store.json` 的 `value` 对象**——字段名与下表一致（JSON），可直接手改、**下次读取（刷新/重开设置面板）即生效**；`cordis.patch.yml` 里本插件那行 `config` 已不再被读取，仅作 store 文件缺失时的播种源（删掉 store 文件即可让它重新播种）。更早的宿主存于 settings namespace。
+
 ```yaml
 style-tweaks:
   # 布局
@@ -281,7 +283,7 @@ dsh plugin --profile web add ./dsh-style-tweaks-0.1.4.tgz
 
 ## 工作原理
 
-- **服务端**（`src/index.ts`）：声明 `style-tweaks` 设置命名空间，并挂载同源路由 `/_dsh/style-tweaks/settings`。DSH 0.1.7 起命名空间就是本插件 entry 自己的 Config（entry id 即命名空间，字段带 `.volatile()` 标记，取值落在 profile patch 的 `config` 里）；更早的宿主走 `ctx.settings.register`，命名空间仍是同一个。
+- **服务端**（`src/index.ts` / `src/store.ts`）：声明 `style-tweaks` 设置命名空间，并挂载同源路由 `/_dsh/style-tweaks/settings`。DSH 0.1.7 起命名空间就是本插件 entry 自己的 Config（entry id 即命名空间，字段带 `.volatile()` 标记），但**取值读写走插件自有存储 `<profile>/.dsh-style-tweaks/store.json`**——路由每请求现读现写 + revision CAS，绕开宿主 settings 全管线（该管线一次写实测 905–1114ms，自有存储 ~10ms；见 `.docs/PLAN-DIAGNOSIS-index.md`），store 缺失时首次请求从 entry Config 的显式字段播种一次；更早的宿主走 `ctx.settings.register` + 原 settings 路径，命名空间仍是同一个。
 - **浏览器端**（`src/client/index.tsx`）：读写该路由、渲染设置页，并根据每个开关的状态实时挂载 / 卸载对应的调整项（纯 CSS 调整项注入运行时 `<style>` 元素；JS 级调整项还会读写应用自身的状态 store 并修补 DOM）。
 - **列宽样式引擎**（`src/client/conversation-width.ts`）：写入 `--dsh-chat-user-width` CSS 变量，并在插件接管列宽时隐藏原生 `[data-width-handle]` 拖拽手柄；宽度值同时镜像到原生手柄读取的 localStorage 槽位，开关切换时无缝往返。
 - **调整项注册表**（`src/client/tweaks/registry.ts`）：每个调整项的元数据（id、settings 字段名、默认值、i18n 键）集中登记；新增调整项只需在注册表里加一条，并在 `src/client/tweaks/` 下新增一个注入文件。

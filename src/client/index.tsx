@@ -551,6 +551,14 @@ interface PendingWrite {
   readonly value: unknown
 }
 
+/** One same-field write parked inside the lead-edge coalesce window. */
+interface StagedWrite {
+  readonly write: PendingWrite
+  readonly resolve: () => void
+  readonly reject: (error: unknown) => void
+  readonly timer: ReturnType<typeof setTimeout>
+}
+
 /**
  * Apply one write to a snapshot value. `unset` drops the key, and the resolver
  * below reads a missing key as "the default" — the same meaning the Host gives
@@ -601,6 +609,14 @@ export class SettingsClient {
    *  `load` started before this moved read a document the write has since
    *  changed, so publishing that answer would roll the panel back. */
   private settled = 0
+  /** Lead-edge coalesce window (ms): the first same-field write dispatches
+   *  immediately; further ones inside the window stage and collapse to the
+   *  last value. Never delays a lone click. */
+  private static readonly COALESCE_MS = 150
+  /** Per-field time of the last dispatch, which arms the coalesce window. */
+  private lastDispatch = new Map<string, number>()
+  /** Same-field writes waiting out the window; latest wins. */
+  private staged = new Map<string, StagedWrite>()
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
@@ -755,19 +771,6 @@ export class SettingsClient {
     })
   }
 
-  /**
-   * Local-first write: the value lands in the store synchronously (the panel
-   * flips, the live tweaks re-mount, a stepper's next step is computed from
-   * it) and the Host request rides a one-at-a-time queue behind it.
-   *
-   * The queue is what makes the optimistic part safe: one request in flight
-   * means each request reads the revision the previous response just
-   * published, so consecutive clicks never race into a conflict; and a
-   * response folds in under whatever is still queued instead of overwriting
-   * it. The promise resolves when the Host has answered, which is what the
-   * panel's save feedback reports — the effect is instant, the confirmation
-   * stays honest.
-   */
   async set(field: string, value: unknown): Promise<void> {
     return await this.write({ action: 'set', field, value })
   }
@@ -776,8 +779,67 @@ export class SettingsClient {
     return await this.write({ action: 'unset', field, value: undefined })
   }
 
+  /**
+   * Local-first write with two cheapening layers ahead of the queue:
+   *
+   * 1. **No-op skip** — `wrote()` already answers "does the Host, resolved,
+   *    stand where this write wants it?"; the snapshot includes pending
+   *    optimistic writes, so re-clicking the active option resolves at once
+   *    (the applied pill still shows) without a request. Gated on `ready` so
+   *    an unloaded panel never guesses.
+   * 2. **Lead-edge coalesce** — the first same-field write dispatches
+   *    immediately (a lone click is never delayed); further same-field
+   *    writes inside COALESCE_MS stage, last one wins: the superseded staged
+   *    write leaves `pending` and resolves at once (its pill is masked by
+   *    the `latestSave` seq advance), the newest stays in `pending` (so a
+   *    foreign response folding through `publishFrom` cannot roll its
+   *    optimistic value back) and dispatches on a fixed ≤150ms timer.
+   *    Different fields never share a window.
+   *
+   * The queue behind dispatch is unchanged: one request in flight, so
+   * consecutive dispatches never race into a conflict, and a response folds
+   * in under whatever is still queued. The promise resolves when the Host
+   * has answered — which is what the panel's save feedback reports.
+   */
   private write(write: PendingWrite): Promise<void> {
-    this.pending.push(write)
+    if (
+      this.state.status === 'ready'
+      && this.state.value !== undefined
+      && wrote(write, this.state.value)
+    ) {
+      return Promise.resolve()
+    }
+    const last = this.lastDispatch.get(write.field) ?? Number.NEGATIVE_INFINITY
+    const wait = SettingsClient.COALESCE_MS - (Date.now() - last)
+    if (wait <= 0) return this.dispatch(write)
+    return new Promise<void>((resolve, reject) => {
+      const prior = this.staged.get(write.field)
+      if (prior !== undefined) {
+        clearTimeout(prior.timer)
+        const index = this.pending.indexOf(prior.write)
+        if (index >= 0) this.pending.splice(index, 1)
+        prior.resolve()
+      }
+      this.pending.push(write)
+      this.publishLocal(write)
+      const timer = setTimeout(() => {
+        const current = this.staged.get(write.field)
+        if (current === undefined) return
+        this.staged.delete(write.field)
+        void this.dispatch(current.write).then(current.resolve, current.reject)
+      }, wait)
+      this.staged.set(write.field, { write, resolve, reject, timer })
+    })
+  }
+
+  /**
+   * Hand one write to the one-at-a-time queue and arm its field's next
+   * coalesce window. The pending/publish steps are idempotent so a staged
+   * write that already published while waiting may re-enter safely.
+   */
+  private dispatch(write: PendingWrite): Promise<void> {
+    this.lastDispatch.set(write.field, Date.now())
+    if (!this.pending.includes(write)) this.pending.push(write)
     this.publishLocal(write)
     const run = this.tail.then(() => this.send(write))
     this.tail = run.then(() => undefined, () => undefined)

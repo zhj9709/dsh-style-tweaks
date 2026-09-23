@@ -4,11 +4,16 @@
  * Owns the `style-tweaks` settings namespace. Since DSH 0.1.7 that namespace
  * IS this plugin's own Loader entry Config: `Config` below is exported by
  * `src/index.ts`, the entry id (`style-tweaks`) is the namespace, and every
- * user-editable field carries the live marker `live()` adds — the browser
- * panel reads and writes the namespace through the host settings service
- * (`describe` / `update` / `mutate`, see `src/web.ts`). Older hosts get the
- * same namespace through `ctx.settings.register`, and the schema is only
- * validated there. Two feature areas:
+ * user-editable field carries the live marker `live()` adds. The browser
+ * panel no longer reads it through the host settings service, though — this
+ * fork's fast path stores live values in `<profile>/.dsh-style-tweaks/store.json`
+ * (`src/store.ts` / `src/web.ts`) and seeds that file once from the entry's
+ * user layer, because the host's describe/update pipeline costs ~1s per write
+ * (measured 2026-09-23) while only the browser ever consumes these fields.
+ * The entry Config stays for Loader validation, the Plugins-page projection
+ * and that seed; hand edits here apply only via a re-seed (delete the store).
+ * Older hosts get the same namespace through `ctx.settings.register` and the
+ * schema is only validated there. Two feature areas:
  *   1. Column-width control (ported from dsh-dialog-width): a px input
  *      (600–1600) with presets, a plugin-vs-native toggle, and side margin.
  *   2. Opt-in CSS tweaks (small fixes for the sidebar and the settings
@@ -451,37 +456,65 @@ function live<S extends object>(schema: S): S {
   return typeof marker === 'function' ? marker.call(schema) : schema
 }
 
-/** Configuration schema with documented defaults; every field is user-editable. */
-export const Config: Schema<StyleTweaksConfig> = z.object({
-  dialogWidth: live(z.number().min(MIN_DIALOG_WIDTH).max(MAX_DIALOG_WIDTH).default(DEFAULT_DIALOG_WIDTH)),
-  usePluginWidth: live(z.boolean().default(DEFAULT_USE_PLUGIN_WIDTH)),
-  sideMargin: live(z.number().min(MIN_SIDE_MARGIN).default(DEFAULT_SIDE_MARGIN)),
-  thinkFixedHeight: live(z.boolean().default(DEFAULT_THINK_FIXED_HEIGHT)),
-  thinkHeight: live(z.number().min(MIN_THINK_HEIGHT).max(MAX_THINK_HEIGHT).default(DEFAULT_THINK_HEIGHT)),
-  stableTurnRail: live(z.boolean().default(DEFAULT_STABLE_TURN_RAIL)),
-  stableSessionTitle: live(z.boolean().default(DEFAULT_STABLE_SESSION_TITLE)),
-  hideSessionHoverActions: live(z.boolean().default(DEFAULT_HIDE_SESSION_HOVER_ACTIONS)),
-  keepTurnRail: live(z.boolean().default(DEFAULT_KEEP_TURN_RAIL)),
-  codeBlockFlushTop: live(z.boolean().default(DEFAULT_CODE_BLOCK_FLUSH_TOP)),
-  projectRunningIndicator: live(z.boolean().default(DEFAULT_PROJECT_RUNNING_INDICATOR)),
-  locateCurrentSession: live(z.boolean().default(DEFAULT_LOCATE_CURRENT_SESSION)),
-  settingsNavScroll: live(z.boolean().default(DEFAULT_SETTINGS_NAV_SCROLL)),
-  sidebarMiddleClickClose: live(z.boolean().default(DEFAULT_SIDEBAR_MIDDLE_CLICK_CLOSE)),
-  legacyStatsLine: live(z.boolean().default(DEFAULT_LEGACY_STATS_LINE)),
-  pillsCacheHitDecimals: live(z.boolean().default(DEFAULT_PILLS_CACHE_HIT_DECIMALS)),
-  turnTimePill: live(z.boolean().default(DEFAULT_TURN_TIME_PILL)),
-  turnProcessCounts: live(z.boolean().default(DEFAULT_TURN_PROCESS_COUNTS)),
-  opaqueStatDialogs: live(z.boolean().default(DEFAULT_OPAQUE_STAT_DIALOGS)),
-  contextPillNoTooltip: live(z.boolean().default(DEFAULT_CONTEXT_PILL_NO_TOOLTIP)),
-  legacyContextMeter: live(z.boolean().default(DEFAULT_LEGACY_CONTEXT_METER)),
-  workspaceClose: live(z.boolean().default(DEFAULT_WORKSPACE_CLOSE)),
-  closedWorkspaces: live(z.array(z.string()).default([...DEFAULT_CLOSED_WORKSPACES])),
-  rightbarInitialWidth: live(z.boolean().default(DEFAULT_RIGHTBAR_INITIAL_WIDTH)),
-  rightbarWidthPercent: live(z.number().min(MIN_RIGHTBAR_WIDTH_PERCENT).max(MAX_RIGHTBAR_WIDTH_PERCENT).default(DEFAULT_RIGHTBAR_WIDTH_PERCENT)),
-  historyPageSizeEnabled: live(z.boolean().default(DEFAULT_HISTORY_PAGE_SIZE_ENABLED)),
-  historyPageSize: live(z.number().min(MIN_HISTORY_PAGE_SIZE).max(MAX_HISTORY_PAGE_SIZE).default(DEFAULT_HISTORY_PAGE_SIZE)),
-  historyPageSizeColdStart: live(z.boolean().default(DEFAULT_HISTORY_PAGE_SIZE_COLD_START)),
-})
+/**
+ * Field schemas exactly as declared — deliberately NOT run through `live()`.
+ *
+ * `live()` sets `meta.volatile`, and `Schema.resolve` treats a volatile schema
+ * as a runtime-provided value: it resolves the data and then wraps the result
+ * in `createVolatile(...)`, which JSON-encodes as `{}`. Every value read back
+ * out of a volatile field is therefore that wrapper, never the submitted
+ * value — so `Config.dict` cannot be used to validate or canonicalise a write.
+ * (Observed 2026-09-23: each toggle write persisted `{}`, which the browser
+ * read as truthy and flipped straight back On.)
+ */
+const FIELDS = {
+  dialogWidth: z.number().min(MIN_DIALOG_WIDTH).max(MAX_DIALOG_WIDTH).default(DEFAULT_DIALOG_WIDTH),
+  usePluginWidth: z.boolean().default(DEFAULT_USE_PLUGIN_WIDTH),
+  sideMargin: z.number().min(MIN_SIDE_MARGIN).default(DEFAULT_SIDE_MARGIN),
+  thinkFixedHeight: z.boolean().default(DEFAULT_THINK_FIXED_HEIGHT),
+  thinkHeight: z.number().min(MIN_THINK_HEIGHT).max(MAX_THINK_HEIGHT).default(DEFAULT_THINK_HEIGHT),
+  stableTurnRail: z.boolean().default(DEFAULT_STABLE_TURN_RAIL),
+  stableSessionTitle: z.boolean().default(DEFAULT_STABLE_SESSION_TITLE),
+  hideSessionHoverActions: z.boolean().default(DEFAULT_HIDE_SESSION_HOVER_ACTIONS),
+  keepTurnRail: z.boolean().default(DEFAULT_KEEP_TURN_RAIL),
+  codeBlockFlushTop: z.boolean().default(DEFAULT_CODE_BLOCK_FLUSH_TOP),
+  projectRunningIndicator: z.boolean().default(DEFAULT_PROJECT_RUNNING_INDICATOR),
+  locateCurrentSession: z.boolean().default(DEFAULT_LOCATE_CURRENT_SESSION),
+  settingsNavScroll: z.boolean().default(DEFAULT_SETTINGS_NAV_SCROLL),
+  sidebarMiddleClickClose: z.boolean().default(DEFAULT_SIDEBAR_MIDDLE_CLICK_CLOSE),
+  legacyStatsLine: z.boolean().default(DEFAULT_LEGACY_STATS_LINE),
+  pillsCacheHitDecimals: z.boolean().default(DEFAULT_PILLS_CACHE_HIT_DECIMALS),
+  turnTimePill: z.boolean().default(DEFAULT_TURN_TIME_PILL),
+  turnProcessCounts: z.boolean().default(DEFAULT_TURN_PROCESS_COUNTS),
+  opaqueStatDialogs: z.boolean().default(DEFAULT_OPAQUE_STAT_DIALOGS),
+  contextPillNoTooltip: z.boolean().default(DEFAULT_CONTEXT_PILL_NO_TOOLTIP),
+  legacyContextMeter: z.boolean().default(DEFAULT_LEGACY_CONTEXT_METER),
+  workspaceClose: z.boolean().default(DEFAULT_WORKSPACE_CLOSE),
+  closedWorkspaces: z.array(z.string()).default([...DEFAULT_CLOSED_WORKSPACES]),
+  rightbarInitialWidth: z.boolean().default(DEFAULT_RIGHTBAR_INITIAL_WIDTH),
+  rightbarWidthPercent: z.number().min(MIN_RIGHTBAR_WIDTH_PERCENT).max(MAX_RIGHTBAR_WIDTH_PERCENT).default(DEFAULT_RIGHTBAR_WIDTH_PERCENT),
+  historyPageSizeEnabled: z.boolean().default(DEFAULT_HISTORY_PAGE_SIZE_ENABLED),
+  historyPageSize: z.number().min(MIN_HISTORY_PAGE_SIZE).max(MAX_HISTORY_PAGE_SIZE).default(DEFAULT_HISTORY_PAGE_SIZE),
+  historyPageSizeColdStart: z.boolean().default(DEFAULT_HISTORY_PAGE_SIZE_COLD_START),
+}
+
+/**
+ * Raw field table, carrying no volatile marker: the store backend validates
+ * each `set` against this. Its `dict` nodes resolve submitted values normally
+ * (`validate(false).value === false`), unlike `Config.dict`. See `FIELDS`.
+ */
+export const StyleTweaksFields = z.object(FIELDS)
+
+/**
+ * Configuration schema with documented defaults; every field is user-editable.
+ * Declared once in `FIELDS`, then marked live here, so the Loader's projection
+ * and the store's validation can never drift apart.
+ */
+export const Config: Schema<StyleTweaksConfig> = z.object(
+  Object.fromEntries(
+    Object.entries(FIELDS).map(([key, schema]) => [key, live(schema)]),
+  ) as typeof FIELDS,
+)
 
 /** Configuration after static validation, with every default materialized. */
 export interface ResolvedStyleTweaksConfig {

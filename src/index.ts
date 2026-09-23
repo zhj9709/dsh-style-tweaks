@@ -2,8 +2,9 @@
  * dsh-style-tweaks — server half.
  *
  * Declares the `style-tweaks` settings namespace so users can
- * toggle conversation-view CSS tweaks either from the Settings panel or by
- * editing the plugin entry's `config` in the profile patch. All rendering
+ * toggle conversation-view CSS tweaks from the Settings panel — or, on DSH
+ * 0.1.7+, by hand-editing `<profile>/.dsh-style-tweaks/store.json` (this fork's
+ * fast path stores the values there; see `src/store.ts`). All rendering
  * work happens in the browser bundle (`src/client`), which reads and writes
  * this namespace through the same-origin route mounted here — the Web
  * settings RPC only exposes a fixed allowlist of namespaces since rc.6, so a
@@ -11,11 +12,13 @@
  * @module dsh-style-tweaks
  */
 
+import { dirname, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import {
   STYLE_TWEAKS_SETTINGS_NAMESPACE,
   Config,
 } from './config.ts'
+import { STORE_DIRNAME, STORE_FILENAME } from './store.ts'
 import { StyleTweaksWebBackend, installStyleTweaksWeb } from './web.ts'
 
 export const name = 'dsh-style-tweaks'
@@ -23,8 +26,10 @@ export const name = 'dsh-style-tweaks'
 /**
  * The entry's Config schema. Exported so the Loader validates the profile
  * patch's `config` against it and — on DSH 0.1.7+ — so the settings service
- * has a schema to project this plugin's form from: since that line a plugin's
- * settings namespace IS its own entry Config, addressed by the entry id.
+ * can still project the entry (Plugins page), while this plugin's own store
+ * (`src/store.ts`) keeps the live values: since that line the namespace IS
+ * the entry, addressed by the entry id, but only the store is read after the
+ * first seed.
  */
 export { Config }
 
@@ -35,15 +40,38 @@ export const inject = ['settings', 'web']
  * The two settings-service shapes this plugin spans: `register` owned a
  * namespace up to DSH 0.1.6, and `configure` sets the page policy for the
  * entry Config that owns it from 0.1.7 on (where `register` is gone).
+ * `documentPath` (0.1.7+) anchors the own store beside the profile patch.
  */
 interface SettingsSeam {
   register?(namespace: string, schema: unknown, options: { applies: 'live' }): void
   configure?(presentation: { auto?: boolean }, owner: unknown): () => void
+  /** Absolute path of the active profile patch; absent on pre-0.1.7 hosts. */
+  documentPath?: string
+}
+
+/**
+ * Resolve the store path beside the profile patch. Any failure — older host
+ * without the getter, a throwing accessor — yields `undefined`, which selects
+ * the legacy settings backend rather than breaking the plugin.
+ * @param settings - The host settings seam.
+ * @returns Absolute store path, or undefined to fall back.
+ */
+function resolveStorePath(settings: SettingsSeam): string | undefined {
+  try {
+    const patch = settings.documentPath
+    if (typeof patch !== 'string' || patch.length === 0) return undefined
+    return join(dirname(patch), STORE_DIRNAME, STORE_FILENAME)
+  } catch {
+    return undefined
+  }
 }
 
 export function apply(ctx: Context): void {
   const settings = ctx.settings as unknown as SettingsSeam
+  let storePath: string | undefined
   if (typeof settings.register === 'function') {
+    // Pre-0.1.7: the settings document owns the namespace and is fast as-is
+    // (in-memory CAS), so the store would add risk without buying anything.
     settings.register(STYLE_TWEAKS_SETTINGS_NAMESPACE, Config, { applies: 'live' })
   } else {
     // The entry Config is the namespace here. `auto: false` keeps the Plugins
@@ -53,11 +81,17 @@ export function apply(ctx: Context): void {
       const dispose = settings.configure?.({ auto: false }, ctx.fiber)
       return () => { dispose?.() }
     })
+    storePath = resolveStorePath(settings)
   }
 
   // The browser Settings panel talks to the namespace through this same-origin
   // route (the Web settings RPC only exposes a fixed allowlist since rc.6).
-  installStyleTweaksWeb(ctx, new StyleTweaksWebBackend(ctx))
+  installStyleTweaksWeb(ctx, new StyleTweaksWebBackend(ctx, storePath))
 
-  ctx.logger.info('[dsh-style-tweaks] settings namespace declared and Web routes mounted')
+  const mode = typeof settings.register === 'function'
+    ? 'legacy settings register'
+    : storePath !== undefined
+      ? `own store ${storePath}`
+      : 'settings fallback (profile patch path unresolved)'
+  ctx.logger.info('[dsh-style-tweaks] settings namespace declared and Web routes mounted (%s)', mode)
 }
