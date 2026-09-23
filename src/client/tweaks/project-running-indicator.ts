@@ -85,12 +85,23 @@
  * The dot is the real `StateDot` imported from
  * `@deepseek-ai/dsh-client-ui-primitives`. That package is in the client
  * shell's `PLATFORM_MODULES` baseline, so at runtime the import resolves to
- * the app's shared instance — its CSS module (and the global
- * `dsh-state-dot-chase` keyframes) and theme tokens are already loaded, and
- * the animation is pixel-identical to the one on session titles. The dot is
- * mounted with a `react-dom/client` root per decorated row and unmounted
+ * the app's shared instance — its CSS module and theme tokens are already
+ * loaded, and the dot is pixel-identical to the one on session titles. The dot
+ * is mounted with a `react-dom/client` root per decorated row and unmounted
  * whenever the row goes idle, the row leaves the DOM, or the tweak is
  * disabled.
+ *
+ * One deliberate departure from the host's own look: every ongoing StateDot in
+ * the app is redrawn as the eight-spoke spinner ZCode uses — lucide's `loader`
+ * icon, eight evenly spaced radial spokes turned at a constant 1s per
+ * revolution — instead of the host's breathing ring. The redraw is
+ * unconditional, i.e. it does not hang off the reduced-motion preference that
+ * 0.1.7 answers by freezing the host's ring; that preference is why the
+ * override exists at all, since a still ring cannot say "work in flight", which
+ * is this tweak's only job. It covers the two dots injected here and the app's
+ * own, wherever the component is used, and stops there — the host's other
+ * reduced-motion answers (tool-row sweeps, text shimmers, progress bars) are
+ * left alone.
  *
  * A session row is only decorated while its slot is empty: the moment the app
  * renders its own dot there (the session started a turn, a subagent is
@@ -180,6 +191,39 @@ span[data-cst-session-indicator] {
   align-items: center;
   flex: none;
   pointer-events: none;
+}
+/* The running indicator is redrawn as ZCode's spinner: the eight evenly spaced
+ * spokes of lucide's loader icon, turned at a constant 1s per revolution. The
+ * host's own ongoing dot is a breathing ring, and since 0.1.7 it is frozen
+ * outright whenever the system asks for reduced motion — a still ring cannot
+ * say "work in flight", which is this tweak's only job, so the redraw is
+ * deliberately unconditional.
+ *
+ * CSS can only reach the host's svg, g and two circles, so the spokes are a
+ * mask on the svg element: the mask is lucide's own loader path data, verbatim
+ * (8 lines, radius 6..10 of a 24 viewBox, 2 units thick, round caps), which
+ * rasterises exactly like the icon ZCode draws. The svg itself is filled with
+ * currentColor, so the dot keeps whatever colour the host's CSS module gave it
+ * (tertiary grey), and everything the host draws inside it is switched off —
+ * the whole child list, not just today's two circles, so a host that redraws
+ * its spinner with other elements stays covered. :has() keeps the rule to svgs
+ * that actually contain the host's spinner. */
+svg[data-state="ongoing"]:has([class*="spinnerMotion"]) {
+  transform-origin: 50% 50%;
+  background: currentColor;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M12 2v4'/%3E%3Cpath d='m16.2 7.8 2.9-2.9'/%3E%3Cpath d='M18 12h4'/%3E%3Cpath d='m16.2 16.2 2.9 2.9'/%3E%3Cpath d='M12 18v4'/%3E%3Cpath d='m4.9 19.1 2.9-2.9'/%3E%3Cpath d='M2 12h4'/%3E%3Cpath d='m4.9 4.9 2.9 2.9'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M12 2v4'/%3E%3Cpath d='m16.2 7.8 2.9-2.9'/%3E%3Cpath d='M18 12h4'/%3E%3Cpath d='m16.2 16.2 2.9 2.9'/%3E%3Cpath d='M12 18v4'/%3E%3Cpath d='m4.9 19.1 2.9-2.9'/%3E%3Cpath d='M2 12h4'/%3E%3Cpath d='m4.9 4.9 2.9 2.9'/%3E%3C/svg%3E");
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  animation: cst-state-dot-spokes 1s linear infinite;
+}
+svg[data-state="ongoing"]:has([class*="spinnerMotion"]) > * {
+  display: none;
+}
+@keyframes cst-state-dot-spokes {
+  to { transform: rotate(360deg); }
 }
 `
 

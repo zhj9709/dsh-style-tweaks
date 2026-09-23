@@ -166,7 +166,11 @@ export interface StyleTweaksConfig {
    * display label, which two Workspaces may share. The dot is DSH's own
    * `StateDot` (shared instance) driven by the app's sessions/workspaces
    * stores — pendingInteraction (amber) needs the ui-session service face
-   * and is out of scope; only ongoing shows.
+   * and is out of scope; only ongoing shows. While the tweak is on, every
+   * ongoing StateDot in the app is redrawn as ZCode's eight-spoke spinner
+   * turning at a constant 1s per revolution, reduced-motion preference or not
+   * (0.1.7 freezes the host's own ring there); the host's other
+   * reduced-motion answers stay untouched.
    */
   projectRunningIndicator?: boolean
   /**
