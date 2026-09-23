@@ -17,8 +17,6 @@ export interface ResolvedStyleTweaksConfig {
   usePluginWidth: boolean
   /** Side margin in px applied to both sides of the conversation column. */
   sideMargin: number
-  /** Whether the stable-turn-rail tweak is enabled. */
-  stableTurnRail: boolean
   /** Whether the session titles stay put with their ellipsis on hover. */
   stableSessionTitle: boolean
   /** Whether the archive / pin hover buttons stay off the session rows. */

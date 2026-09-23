@@ -17,8 +17,8 @@
  *   1. Column-width control (ported from dsh-dialog-width): a px input
  *      (600–1600) with presets, a plugin-vs-native toggle, and side margin.
  *   2. Opt-in CSS tweaks (small fixes for the sidebar and the settings
- *      panel, e.g. holding the turn-navigation rail in place, with more
- *      added over time). Each tweak is a boolean field.
+ *      panel, e.g. letting the settings nav scroll, with more added over
+ *      time). Each tweak is a boolean field.
  * @module dsh-style-tweaks/config
  */
 
@@ -103,14 +103,6 @@ export interface StyleTweaksConfig {
   rightbarWidthPercent?: number
 
   // ── CSS tweaks ───────────────────────────────────────────────────────
-  /**
-   * Keep the turn-navigation rail at a stable position when scrolling up
-   * past the first message into the system-prompt area. Without this fix
-   * the rail drops by 16px (the chat scroll container's `padding-top`)
-   * because the rail slot is `position: sticky; top: 0` inside that
-   * padded container.
-   */
-  stableTurnRail?: boolean
   /**
    * Restore the session-row title behaviour shipped through DSH
    * 0.1.6-alpha.1: an overlong title keeps its ellipsis and never moves.
@@ -342,8 +334,6 @@ export const MAX_HISTORY_PAGE_SIZE = 1000
 export const STEP_HISTORY_PAGE_SIZE = 50
 
 // ── CSS tweak constants ─────────────────────────────────────────────────
-/** Default: every shipped tweak is on. */
-export const DEFAULT_STABLE_TURN_RAIL = true
 /**
  * Default: off — the hover title reveal is 0.1.6-alpha.2's shipped
  * affordance; restoring the pre-alpha.1 resting title is opt-in.
@@ -451,7 +441,6 @@ const FIELDS = {
   dialogWidth: z.number().min(MIN_DIALOG_WIDTH).max(MAX_DIALOG_WIDTH).default(DEFAULT_DIALOG_WIDTH),
   usePluginWidth: z.boolean().default(DEFAULT_USE_PLUGIN_WIDTH),
   sideMargin: z.number().min(MIN_SIDE_MARGIN).default(DEFAULT_SIDE_MARGIN),
-  stableTurnRail: z.boolean().default(DEFAULT_STABLE_TURN_RAIL),
   stableSessionTitle: z.boolean().default(DEFAULT_STABLE_SESSION_TITLE),
   hideSessionHoverActions: z.boolean().default(DEFAULT_HIDE_SESSION_HOVER_ACTIONS),
   keepTurnRail: z.boolean().default(DEFAULT_KEEP_TURN_RAIL),
@@ -509,8 +498,6 @@ export interface ResolvedStyleTweaksConfig {
   usePluginWidth: boolean
   /** Side margin in px applied to both sides of the conversation column. */
   sideMargin: number
-  /** Whether the stable-turn-rail tweak is enabled. */
-  stableTurnRail: boolean
   /** Whether the session titles stay put with their ellipsis on hover. */
   stableSessionTitle: boolean
   /** Whether the archive / pin hover buttons stay off the session rows. */
@@ -563,7 +550,6 @@ export function resolveConfig(config: StyleTweaksConfig = {}): ResolvedStyleTwea
     dialogWidth: resolveDialogWidth(config.dialogWidth),
     usePluginWidth: config.usePluginWidth ?? DEFAULT_USE_PLUGIN_WIDTH,
     sideMargin: config.sideMargin ?? DEFAULT_SIDE_MARGIN,
-    stableTurnRail: config.stableTurnRail ?? DEFAULT_STABLE_TURN_RAIL,
     stableSessionTitle: config.stableSessionTitle ?? DEFAULT_STABLE_SESSION_TITLE,
     hideSessionHoverActions: config.hideSessionHoverActions ?? DEFAULT_HIDE_SESSION_HOVER_ACTIONS,
     keepTurnRail: config.keepTurnRail ?? DEFAULT_KEEP_TURN_RAIL,

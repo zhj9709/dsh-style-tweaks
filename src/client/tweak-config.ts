@@ -30,8 +30,6 @@ export const MIN_SIDE_MARGIN = 32
 export const CONVERSATION_WIDTH_STORAGE_KEY = 'dsh.conversation.contentWidth'
 
 // ── CSS tweak constants (mirror src/config.ts) ──────────────────────────
-/** Default state of the stable-turn-rail tweak. */
-export const DEFAULT_STABLE_TURN_RAIL = true
 /** Default state of the stable-session-title tweak (off: the hover reveal stays). */
 export const DEFAULT_STABLE_SESSION_TITLE = false
 /** Default state of the hide-session-hover-actions tweak (off: the host's hover buttons stay). */
@@ -152,7 +150,6 @@ export function resolveClientConfig(
     dialogWidth: resolveDialogWidth(value?.dialogWidth),
     usePluginWidth: value?.usePluginWidth ?? DEFAULT_USE_PLUGIN_WIDTH,
     sideMargin: resolveSideMargin(value?.sideMargin),
-    stableTurnRail: value?.stableTurnRail ?? DEFAULT_STABLE_TURN_RAIL,
     stableSessionTitle: value?.stableSessionTitle ?? DEFAULT_STABLE_SESSION_TITLE,
     hideSessionHoverActions: value?.hideSessionHoverActions ?? DEFAULT_HIDE_SESSION_HOVER_ACTIONS,
     keepTurnRail: value?.keepTurnRail ?? DEFAULT_KEEP_TURN_RAIL,

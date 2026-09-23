@@ -42,7 +42,6 @@ import { TWEAKS, type TweakDescriptor } from './tweaks/registry.ts'
 import { injectStableSessionTitleStyles } from './tweaks/stable-session-title.ts'
 import { injectHideSessionHoverActionsStyles } from './tweaks/hide-session-hover-actions.ts'
 import { injectOpaqueStatDialogsStyles } from './tweaks/opaque-stat-dialogs.ts'
-import { injectStableTurnRailStyles } from './tweaks/stable-turn-rail.ts'
 import { injectKeepTurnRailStyles } from './tweaks/keep-turn-rail.ts'
 import { injectCodeBlockFlushTopStyles } from './tweaks/code-block-flush-top.ts'
 import { setupProjectRunningIndicator } from './tweaks/project-running-indicator.ts'
@@ -75,7 +74,6 @@ const SETTINGS_ROUTE = '/_dsh/style-tweaks/settings'
  * change remounts every tweak, so the capture never goes stale).
  */
 const TWEAK_INJECTORS: Record<string, (ctx: ClientContext, resolved: ResolvedTweaks, settings: SettingsClient) => () => void> = {
-  'stable-turn-rail': () => injectStableTurnRailStyles(),
   'stable-session-title': () => injectStableSessionTitleStyles(),
   'hide-session-hover-actions': () => injectHideSessionHoverActionsStyles(),
   'opaque-stat-dialogs': () => injectOpaqueStatDialogsStyles(),
@@ -168,8 +166,6 @@ const en = {
   readOnly: 'The active Settings provider is read-only.',
   tweakOn: 'On',
   tweakOff: 'Off',
-  'tweak.stableTurnRail.title': 'Stable turn-navigation rail',
-  'tweak.stableTurnRail.description': 'Keep the turn-navigation rail at a stable position when scrolling up past the first message into the system prompt ("the rail jumps down by ~16 px when I scroll up after clicking the first turn").',
   'tweak.stableSessionTitle.title': 'Stable session titles',
   'tweak.stableSessionTitle.description': 'Restores the pre-0.1.6-alpha.2 session rows: a title too long for its row keeps its ellipsis and never moves — the hover state no longer smoothly slides it to reveal the clipped tail. The row\'s hover card (hover a moment) still shows the full title.',
   'tweak.hideSessionHoverActions.title': 'Hide session hover buttons',
@@ -292,8 +288,6 @@ const zh: Record<LocaleKey, string> = {
   readOnly: '当前设置提供方为只读。',
   tweakOn: '开启',
   tweakOff: '关闭',
-  'tweak.stableTurnRail.title': '轮次导航栏稳定',
-  'tweak.stableTurnRail.description': '向上滚动到第一条消息上方的系统提示词区域时，让右侧轮次导航栏保持在原位（不再下移约 16 像素）。',
   'tweak.stableSessionTitle.title': '会话标题悬停稳定',
   'tweak.stableSessionTitle.description': '0.1.6-alpha.2 起，悬停会话行时超宽的标题会平滑滑动到末尾、亮出被裁剪的部分，移开又弹回。开启本项恢复 0.1.6-alpha.2 之前的行为：标题保持原位、始终显示省略号；停顿悬停出现的信息卡片仍会展示完整标题。',
   'tweak.hideSessionHoverActions.title': '隐藏会话悬停按钮',

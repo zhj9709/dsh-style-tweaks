@@ -7,9 +7,9 @@
  */
 
 export interface TweakDescriptor {
-  /** Unique id, e.g. "stable-turn-rail". Doubles as the DOM data-tweak id. */
+  /** Unique id, e.g. "keep-turn-rail". Doubles as the DOM data-tweak id. */
   readonly id: string
-  /** Settings document field name, e.g. "stableTurnRail". */
+  /** Settings document field name, e.g. "keepTurnRail". */
   readonly settingKey: string
   /** Default value when the field is absent from the settings document. */
   readonly defaultEnabled: boolean
@@ -31,13 +31,6 @@ export interface TweakDescriptor {
 
 /** All tweaks, in display order. Add new entries here. */
 export const TWEAKS: readonly TweakDescriptor[] = [
-  {
-    id: 'stable-turn-rail',
-    settingKey: 'stableTurnRail',
-    defaultEnabled: true,
-    titleKey: 'tweak.stableTurnRail.title',
-    descriptionKey: 'tweak.stableTurnRail.description',
-  },
   {
     id: 'stable-session-title',
     settingKey: 'stableSessionTitle',
