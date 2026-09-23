@@ -502,8 +502,15 @@ const FIELDS = {
  * Raw field table, carrying no volatile marker: the store backend validates
  * each `set` against this. Its `dict` nodes resolve submitted values normally
  * (`validate(false).value === false`), unlike `Config.dict`. See `FIELDS`.
+ *
+ * The annotation is load-bearing, not stylistic: without it tsc emits TS2742
+ * (since the 0.1.7-rc.1 dependency layout) because the inferred type names a
+ * schemastery copy reachable only through a nested node_modules path
+ * (`dsh-host-webserver`'s own), which is not portable. `Config` carries the
+ * same annotation for the same reason — both describe the same declarations,
+ * so both share one type.
  */
-export const StyleTweaksFields = z.object(FIELDS)
+export const StyleTweaksFields: Schema<StyleTweaksConfig> = z.object(FIELDS)
 
 /**
  * Configuration schema with documented defaults; every field is user-editable.
