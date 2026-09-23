@@ -544,11 +544,63 @@ interface SettingsState {
   error?: string
 }
 
+/** One field write already shown locally but not yet confirmed by the Host. */
+interface PendingWrite {
+  readonly action: 'set' | 'unset'
+  readonly field: string
+  readonly value: unknown
+}
+
+/**
+ * Apply one write to a snapshot value. `unset` drops the key, and the resolver
+ * below reads a missing key as "the default" — the same meaning the Host gives
+ * an unset, so the two agree without carrying a second copy of the defaults.
+ */
+function applyWrite(value: TweaksValue, write: PendingWrite): TweaksValue {
+  const next = { ...value, [write.field]: write.value } as TweaksValue
+  if (write.action === 'unset') delete (next as Record<string, unknown>)[write.field]
+  return next
+}
+
+/**
+ * Whether the Host already holds what one write asked for. Used only on the
+ * failure path, where a save's answer never arrived: reading the Host back is
+ * the only way to tell "committed, response lost" from "never landed".
+ *
+ * The question is asked by applying the write to the Host's own snapshot and
+ * comparing that field THROUGH the resolver, never by hunting for the raw
+ * value. The Host's `value` is the resolved config, so an `unset` comes back
+ * with the field re-materialised at its default — a bare `undefined` test
+ * would brand every successful-but-unanswered unset a failure — while routing
+ * `set` through the same resolver keeps both actions on one rule: nothing
+ * changes ⇒ the Host already stands where the write wanted it. Arrays compare
+ * element-wise (the Host re-reads the document, so its array is always a fresh
+ * object); anything else answers `false`, i.e. report a failure rather than a
+ * success that was never verified.
+ */
+function wrote(write: PendingWrite, value: TweaksValue): boolean {
+  const read = (candidate: TweaksValue): unknown => (candidate as Record<string, unknown>)[write.field]
+  const left = read(resolveValue(value))
+  const right = read(resolveValue(applyWrite(value, write)))
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return left.length === right.length && left.every((item, index) => item === right[index])
+  }
+  return left === right
+}
+
 /** Small external store shared by the Settings route and the CSS engine. */
 export class SettingsClient {
   private state: SettingsState = { status: 'loading', writable: false, value: undefined, revision: undefined }
   private listeners = new Set<() => void>()
   private generation = 0
+  /** Writes shown locally but still crossing the wire, oldest first. */
+  private pending: PendingWrite[] = []
+  /** Chains that wire traffic: one request in flight at a time. */
+  private tail: Promise<void> = Promise.resolve()
+  /** Bumped whenever a queued write publishes the Host's answer for it. A
+   *  `load` started before this moved read a document the write has since
+   *  changed, so publishing that answer would roll the panel back. */
+  private settled = 0
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
@@ -562,18 +614,31 @@ export class SettingsClient {
     for (const listener of this.listeners) listener()
   }
 
+  /**
+   * Publish a Host snapshot with every still-pending local write re-applied on
+   * top of it.
+   *
+   * Two things depend on that. A response for an EARLIER write must not undo
+   * what a later click already showed — those values are optimistic only, so a
+   * bare snapshot would drop them until its own response landed. And the
+   * snapshot's `revision` has to reach the store while later clicks sit in the
+   * queue: each queued request then sends that fresh revision, which is why
+   * rapid toggling no longer loses a race into a 409 and a second doomed
+   * round-trip.
+   */
+  private publishFrom(snapshot: Snapshot): void {
+    const value = this.pending.reduce<TweaksValue>((current, write) => applyWrite(current, write), snapshot.value)
+    this.publish({ status: 'ready', writable: snapshot.writable, value, revision: snapshot.revision })
+  }
+
   async load(): Promise<void> {
     const generation = ++this.generation
+    const settled = this.settled
     if (this.state.status === 'loading') this.publish({ ...this.state, status: 'loading' })
     try {
       const snapshot = await apiRequest<Snapshot>()
-      if (generation !== this.generation) return
-      this.publish({
-        status: 'ready',
-        writable: snapshot.writable,
-        value: snapshot.value,
-        revision: snapshot.revision,
-      })
+      if (generation !== this.generation || settled !== this.settled) return
+      this.publishFrom(snapshot)
     } catch (error) {
       if (generation !== this.generation) return
       this.publish({ ...this.state, status: 'error', error: error instanceof Error ? error.message : String(error) })
@@ -581,53 +646,142 @@ export class SettingsClient {
   }
 
   /**
-   * Write one field. The expected revision is read at build time so the same
-   * payload can be rebuilt after a conflict. A save whose expected revision
-   * lost the race (another tab writing, or the settings watcher republishing
-   * a hand edit) refetches the snapshot once and retries with the fresh
-   * revision — bounded to a single attempt, so two racing writers converge
-   * while a persistent conflict still surfaces to the caller.
+   * Show one write locally, synchronously, before anything crosses the wire.
+   * This is what makes a toggle flip at click time — and a ± stepper compute
+   * its next step from the value it just displayed — instead of waiting out
+   * the Host's save path, which on 0.1.7 runs three full `describe()`s and two
+   * composition reconciles (~0.9s). No `value` yet means the panel has not
+   * loaded: there is nothing to merge into, and the queued request is all that
+   * is needed. The `revision` deliberately stays untouched — it is the Host's
+   * CAS token and only its answers may move it.
    */
-  private async post(build: (revision: number) => unknown, allowConflictRetry = true): Promise<void> {
-    const generation = ++this.generation
-    let snapshot: Snapshot
+  private publishLocal(write: PendingWrite): void {
+    if (this.state.value === undefined) return
+    this.publish({ ...this.state, value: applyWrite(this.state.value, write) })
+  }
+
+  /** Retire a write: off the pending list, then publish its Host answer. */
+  private settle(write: PendingWrite, snapshot: Snapshot): void {
+    const index = this.pending.indexOf(write)
+    if (index >= 0) this.pending.splice(index, 1)
+    this.settled += 1
+    this.publishFrom(snapshot)
+  }
+
+  /** Give up on a write without an answer: it stops riding on later publishes,
+   *  so the next Host snapshot reverts the field to what actually holds. */
+  private drop(write: PendingWrite): void {
+    const index = this.pending.indexOf(write)
+    if (index >= 0) this.pending.splice(index, 1)
+  }
+
+  /**
+   * What the Host actually holds now; null when it cannot be read at all.
+   *
+   * A single attempt, deliberately unlike `apiRequest`: that ladder exists to
+   * ride out the restart a settings write triggers, and this read runs only
+   * after a write has ALREADY exhausted it — spending another ~5.25s here just
+   * delays the failure report and, because the queue is one-at-a-time, every
+   * save lined up behind it. A read that fails outright leaves the optimistic
+   * value on screen and reports the original error, which is the right answer
+   * when the Host cannot be asked at all.
+   */
+  private async readTruth(): Promise<Snapshot | null> {
     try {
-      snapshot = await apiRequest<Snapshot>({
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(build(this.state.revision ?? 0)),
-      })
-    } catch (error) {
-      if (!allowConflictRetry
-        || !(error instanceof SettingsApiError)
-        || (error.status !== 409 && error.code !== 'settings-conflict')) throw error
-      // Refetch WITHOUT bumping the generation, so the `!==` check below
-      // still tells us whether a newer write superseded us in the meantime.
-      const fresh = await apiRequest<Snapshot>()
-      if (generation !== this.generation) return
-      this.publish({
-        status: 'ready',
-        writable: fresh.writable,
-        value: fresh.value,
-        revision: fresh.revision,
-      })
-      return this.post(build, false)
+      const response = await fetch(SETTINGS_ROUTE, { credentials: 'same-origin' })
+      const body = await response.json() as ApiSuccess<Snapshot> | ApiFailure
+      return response.ok && body.ok ? body.value : null
+    } catch {
+      return null
     }
-    if (generation !== this.generation) return
-    this.publish({
-      status: 'ready',
-      writable: snapshot.writable,
-      value: snapshot.value,
-      revision: snapshot.revision,
+  }
+
+  /**
+   * Send one queued write and retire it with the Host's answer, or resolve
+   * against what the Host really holds when the answer never arrives.
+   *
+   * The read-back matters because a save can commit and still fail to answer
+   * (the connection cut after the write), and blind rollback would then show
+   * "not saved" for a save that happened: a read that already contains the
+   * written value completes as a success, any other read publishes the truth so
+   * the panel stops claiming something that is not there, and a Host that
+   * cannot be read either keeps the optimistic value on screen while the
+   * original error is what the caller reports.
+   */
+  private async send(write: PendingWrite): Promise<void> {
+    try {
+      const snapshot = await this.post(write)
+      this.settle(write, snapshot)
+    } catch (error) {
+      const truth = await this.readTruth()
+      if (truth === null) {
+        this.drop(write)
+        throw error
+      }
+      this.settle(write, truth)
+      if (wrote(write, truth.value)) return
+      throw error
+    }
+  }
+
+  /**
+   * POST one write, re-reading the revision once when the expected one lost a
+   * race (another tab writing, or the settings watcher republishing a hand
+   * edit) — bounded to a single attempt so a persistent conflict surfaces
+   * instead of looping. The refreshed snapshot publishes with `write` STILL
+   * pending on top, so the panel keeps showing the value that is about to be
+   * written rather than blinking back to the old one between attempts.
+   */
+  private async post(write: PendingWrite): Promise<Snapshot> {
+    try {
+      return await this.postOnce(write)
+    } catch (error) {
+      if (!(error instanceof SettingsApiError)
+        || (error.status !== 409 && error.code !== 'settings-conflict')) throw error
+      const fresh = await apiRequest<Snapshot>()
+      this.publishFrom(fresh)
+      return await this.postOnce(write)
+    }
+  }
+
+  private async postOnce(write: PendingWrite): Promise<Snapshot> {
+    const payload = write.action === 'set'
+      ? { action: 'set', field: write.field, value: write.value, expectedRevision: this.state.revision ?? 0 }
+      : { action: 'unset', field: write.field, expectedRevision: this.state.revision ?? 0 }
+    return await apiRequest<Snapshot>({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
     })
   }
 
+  /**
+   * Local-first write: the value lands in the store synchronously (the panel
+   * flips, the live tweaks re-mount, a stepper's next step is computed from
+   * it) and the Host request rides a one-at-a-time queue behind it.
+   *
+   * The queue is what makes the optimistic part safe: one request in flight
+   * means each request reads the revision the previous response just
+   * published, so consecutive clicks never race into a conflict; and a
+   * response folds in under whatever is still queued instead of overwriting
+   * it. The promise resolves when the Host has answered, which is what the
+   * panel's save feedback reports — the effect is instant, the confirmation
+   * stays honest.
+   */
   async set(field: string, value: unknown): Promise<void> {
-    await this.post((revision) => ({ action: 'set', field, value, expectedRevision: revision }))
+    return await this.write({ action: 'set', field, value })
   }
 
   async unset(field: string): Promise<void> {
-    await this.post((revision) => ({ action: 'unset', field, expectedRevision: revision }))
+    return await this.write({ action: 'unset', field, value: undefined })
+  }
+
+  private write(write: PendingWrite): Promise<void> {
+    this.pending.push(write)
+    this.publishLocal(write)
+    const run = this.tail.then(() => this.send(write))
+    this.tail = run.then(() => undefined, () => undefined)
+    return run
   }
 }
 
