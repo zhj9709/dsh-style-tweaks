@@ -437,7 +437,7 @@ button.cst-pills-pill{cursor:pointer}
 button.cst-pills-pill:hover,button.cst-pills-pill[aria-expanded='true']{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary)}
 .cst-pills-label{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .cst-pills-sep{color:var(--dsw-alias-separator-primary);margin:0 6px}
-.cst-pilldlg-panel{position:fixed;z-index:1100;box-sizing:border-box;width:max-content;min-width:min(300px,calc(100vw - 24px));max-width:min(440px,calc(100vw - 24px));padding:16px;border:0;border-radius:12px;background:var(--dsw-specific-menu);--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);cursor:default}
+.cst-pilldlg-panel{position:fixed;z-index:1100;box-sizing:border-box;width:max-content;min-width:min(300px,calc(100vw - 24px));max-width:min(440px,calc(100vw - 24px));padding:16px;border:0;border-radius:12px;background:var(--dsw-specific-menu);backdrop-filter:var(--dsw-menu-backdrop-filter);--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);cursor:default}
 .cst-pilldlg-title{display:flex;justify-content:space-between;gap:16px;margin-bottom:8px;color:var(--dsw-alias-label-primary);font-weight:500}
 .cst-pilldlg-titleRule{margin-bottom:10px;border-top:.5px solid var(--dsw-alias-border-l2)}
 .cst-pilldlg-titleValue{font-variant-numeric:tabular-nums}

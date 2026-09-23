@@ -318,7 +318,7 @@ const METER_CSS = `
 .cst-ctxm-trigger:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .cst-ctxm-track{fill:none;stroke:var(--dsw-alias-border-l3);stroke-width:2}
 .cst-ctxm-fill{fill:none;stroke:var(--dsw-alias-label-tertiary);stroke-width:2;stroke-linecap:round}
-.cst-ctxm-panel{position:absolute;bottom:calc(100% + 8px);right:0;z-index:100;box-sizing:border-box;width:264px;padding:12px;border:0;border-radius:12px;background:var(--dsw-specific-menu);--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);font-size:12px;line-height:20px;color:var(--dsw-alias-label-secondary);cursor:default}
+.cst-ctxm-panel{position:absolute;bottom:calc(100% + 8px);right:0;z-index:100;box-sizing:border-box;width:264px;padding:12px;border:0;border-radius:12px;background:var(--dsw-specific-menu);backdrop-filter:var(--dsw-menu-backdrop-filter);--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);font-size:12px;line-height:20px;color:var(--dsw-alias-label-secondary);cursor:default}
 .cst-ctxm-header{display:flex;align-items:center;gap:6px}
 .cst-ctxm-figures{margin-left:auto;font-weight:500;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary)}
 .cst-ctxm-percent{font-weight:500;color:var(--dsw-alias-label-primary)}

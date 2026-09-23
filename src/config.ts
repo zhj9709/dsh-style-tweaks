@@ -265,6 +265,22 @@ export interface StyleTweaksConfig {
    */
   turnProcessCounts?: boolean
   /**
+   * Keep the stat dialogs opaque, as they were through 0.1.6: 0.1.7-alpha.1
+   * redefined the elevated menu/card material (`--dsw-specific-menu` went from
+   * the opaque `--dsw-alias-bg-layer-3` to a translucent fill, paired with a
+   * 40px backdrop blur), which these dialogs picked up with every other
+   * consumer. On: the composer stats and token-usage dialogs, the turn-tail
+   * usage and time pills' dialogs, and the context capsule's breakdown panel
+   * paint the theme's own layer-3 again — five dialogs, the ones the host
+   * renders through its `stat-dialog` seat plus the ContextMeter panel (the
+   * dark theme follows its own layer-3). Everything else keeps the shipped
+   * material — the menus and the todo / jobs / goal / queue / dock panels are
+   * deliberately out of scope. Hosts before 0.1.7-alpha.1 already paint the
+   * opaque value, so this is a same-value no-op there. Off (default): the
+   * shipped material stays.
+   */
+  opaqueStatDialogs?: boolean
+  /**
    * Let the user "close" a Workspace — hide it from the sidebar browser and
    * the New Session picker without deleting anything. Off (default): the
    * stock list stays complete. On: the Workspace disappears from every
@@ -384,6 +400,11 @@ export const DEFAULT_TURN_TIME_PILL = false
  */
 export const DEFAULT_TURN_PROCESS_COUNTS = false
 /**
+ * Default: off — the translucent frosted material is 0.1.7-alpha.1's shipped
+ * look; restoring 0.1.6's opaque fill on the stat dialogs is opt-in.
+ */
+export const DEFAULT_OPAQUE_STAT_DIALOGS = false
+/**
  * Default: off — the context capsule keeps its shipped hover tooltip until
  * the user opts into hiding it.
  */
@@ -446,6 +467,7 @@ export const Config: Schema<StyleTweaksConfig> = z.object({
   pillsCacheHitDecimals: live(z.boolean().default(DEFAULT_PILLS_CACHE_HIT_DECIMALS)),
   turnTimePill: live(z.boolean().default(DEFAULT_TURN_TIME_PILL)),
   turnProcessCounts: live(z.boolean().default(DEFAULT_TURN_PROCESS_COUNTS)),
+  opaqueStatDialogs: live(z.boolean().default(DEFAULT_OPAQUE_STAT_DIALOGS)),
   contextPillNoTooltip: live(z.boolean().default(DEFAULT_CONTEXT_PILL_NO_TOOLTIP)),
   legacyContextMeter: live(z.boolean().default(DEFAULT_LEGACY_CONTEXT_METER)),
   workspaceClose: live(z.boolean().default(DEFAULT_WORKSPACE_CLOSE)),
@@ -495,6 +517,8 @@ export interface ResolvedStyleTweaksConfig {
   turnTimePill: boolean
   /** Whether the folded process group's header carries the 0.1.6 counts again. */
   turnProcessCounts: boolean
+  /** Whether the five readout stat dialogs use 0.1.6's opaque fill. */
+  opaqueStatDialogs: boolean
   /** Whether the context capsule's hover tooltip is suppressed. */
   contextPillNoTooltip: boolean
   /** Whether the pre-alpha.2 context ring is rendered inside the input card. */
@@ -536,6 +560,7 @@ export function resolveConfig(config: StyleTweaksConfig = {}): ResolvedStyleTwea
     pillsCacheHitDecimals: config.pillsCacheHitDecimals ?? DEFAULT_PILLS_CACHE_HIT_DECIMALS,
     turnTimePill: config.turnTimePill ?? DEFAULT_TURN_TIME_PILL,
     turnProcessCounts: config.turnProcessCounts ?? DEFAULT_TURN_PROCESS_COUNTS,
+    opaqueStatDialogs: config.opaqueStatDialogs ?? DEFAULT_OPAQUE_STAT_DIALOGS,
     contextPillNoTooltip: config.contextPillNoTooltip ?? DEFAULT_CONTEXT_PILL_NO_TOOLTIP,
     legacyContextMeter: config.legacyContextMeter ?? DEFAULT_LEGACY_CONTEXT_METER,
     workspaceClose: config.workspaceClose ?? DEFAULT_WORKSPACE_CLOSE,

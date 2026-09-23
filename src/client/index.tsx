@@ -43,6 +43,7 @@ import type { ResolvedStyleTweaksConfig } from './tweak-types.ts'
 import { TWEAKS, type TweakDescriptor } from './tweaks/registry.ts'
 import { injectStableSessionTitleStyles } from './tweaks/stable-session-title.ts'
 import { injectHideSessionHoverActionsStyles } from './tweaks/hide-session-hover-actions.ts'
+import { injectOpaqueStatDialogsStyles } from './tweaks/opaque-stat-dialogs.ts'
 import { injectStableTurnRailStyles } from './tweaks/stable-turn-rail.ts'
 import { injectKeepTurnRailStyles } from './tweaks/keep-turn-rail.ts'
 import { injectCodeBlockFlushTopStyles } from './tweaks/code-block-flush-top.ts'
@@ -80,6 +81,7 @@ const TWEAK_INJECTORS: Record<string, (ctx: ClientContext, resolved: ResolvedTwe
   'stable-turn-rail': () => injectStableTurnRailStyles(),
   'stable-session-title': () => injectStableSessionTitleStyles(),
   'hide-session-hover-actions': () => injectHideSessionHoverActionsStyles(),
+  'opaque-stat-dialogs': () => injectOpaqueStatDialogsStyles(),
   'keep-turn-rail': () => injectKeepTurnRailStyles(),
   'code-block-flush-top': () => injectCodeBlockFlushTopStyles(),
   'project-running-indicator': setupProjectRunningIndicator,
@@ -195,8 +197,8 @@ const en = {
   'tweak.legacyStatsLine.description': 'Show the composer stats the way DSH did before 0.1.5: one centered text line under the input box (turns/steps, LLM & tool time, TTFT, speed, tokens, cache hit) instead of the new icon pills. Full line on hover.',
   'tweak.pillsCacheHitDecimals.title': 'Cache hit with two decimals',
   'tweak.pillsCacheHitDecimals.description': 'Show the composer stats\' cache-hit share with two decimal places (87.35%) instead of integer rounding — applies to the new icon pills and the legacy text line alike, whichever is showing.',
-  'tweak.turnTimePill.title': 'Turn time pill',
-  'tweak.turnTimePill.description': 'Through 0.1.6 a settled turn ended with two stat pills: usage and time, each opening its own dialog. 0.1.7-alpha.1 dropped the time half. This puts it back right of the usage pill, with its 本轮用时和速度 dialog: the turn\'s total run time, plus output speed (TPS) and time to first token (TTFT), rebuilt from the model stream embedded in the session log — so history loads show them too.',
+  'tweak.turnTimePill.title': 'Turn time and speed',
+  'tweak.turnTimePill.description': 'Through 0.1.6 a settled turn ended with two click-open readings at the end of its action row: usage and time, each opening its own dialog. 0.1.7-alpha.1 dropped the time one. This puts it back right of the usage reading, with its Turn time and speed dialog: the turn\'s total run time, plus output speed (TPS) and time to first token (TTFT), rebuilt from the model stream embedded in the session log — so history loads show them too.',
   'tweak.turnTimePill.label': 'Ran for {duration}',
   'tweak.turnTimePill.pillTitle': 'Turn time and speed',
   'tweak.turnTimePill.duration': 'Total run time',
@@ -204,8 +206,10 @@ const en = {
   'tweak.turnTimePill.ttft': 'Time to first token (TTFT)',
   'tweak.turnProcessCounts.title': 'Call counts on process groups',
   'tweak.turnProcessCounts.description': 'Through 0.1.6 the header of a folded process group was a tally: tool calls and messages, plus subagents when the turn spawned any. 0.1.7-alpha.1 replaced it with the elapsed time. This puts the 0.1.6 tally back after the time, so both halves show at once — the counts grow while the turn runs, and the failed / stopped / running headers read the same way. A turn with nothing to count is left as shipped.',
-  'tweak.contextPillNoTooltip.title': 'No context pill hover info',
-  'tweak.contextPillNoTooltip.description': 'Hovering the context capsule under the input box (DSH 0.1.6-alpha.2+) no longer floats the "13% of context used" tooltip. The capsule\'s hover highlight and its click-open breakdown dialog are untouched; hosts without the capsule leave this inert.',
+  'tweak.opaqueStatDialogs.title': 'Opaque stat dialogs',
+  'tweak.opaqueStatDialogs.description': '0.1.7-alpha.1 swapped the card material for a translucent, frosted one. This switches only the click-open stat dialogs back to 0.1.6\'s opaque fill — the composer\'s session-statistics and token-usage cards, the turn-tail usage and time pills, and the context-occupancy panel (five in all). Every other menu and panel (session and workspace "..." menus, the model selector, the composer\'s / and @ menus, the todo / queue / dock panels) keeps the shipped material.',
+  'tweak.contextPillNoTooltip.title': 'No context meter hover info',
+  'tweak.contextPillNoTooltip.description': 'Hovering the context meter button under the input box (DSH 0.1.6-alpha.2+) no longer floats the "13% of context used" tooltip. The button\'s hover highlight and its click-open breakdown dialog are untouched; hosts without that button leave this inert.',
   'tweak.legacyContextMeter.title': 'Context ring in the input card',
   'tweak.legacyContextMeter.description': 'Restores the pre-0.1.6-alpha.2 context meter: a 28px ring button inside the input card\'s toolbar row, left of the send button, instead of the capsule below the card. The hover reading and the click-open context breakdown are kept; the shipped capsule stays hidden while this is on.',
   'tweak.workspaceClose.title': 'Closable workspaces',
@@ -321,8 +325,8 @@ const zh: Record<LocaleKey, string> = {
   'tweak.legacyStatsLine.description': '以 0.1.5 之前的样式，在输入框下方显示一行居中的文本统计（轮数/步数、模型与工具耗时、首字延迟、输出速度、Token 用量、缓存命中），替代新版图标胶囊；悬停可查看完整内容。',
   'tweak.pillsCacheHitDecimals.title': '缓存命中两位小数',
   'tweak.pillsCacheHitDecimals.description': '缓存命中率按两位小数显示（如 87.35%），不再取整；无论统计信息以新版图标胶囊还是经典文本行展示，均适用。',
-  'tweak.turnTimePill.title': '用时胶囊',
-  'tweak.turnTimePill.description': '0.1.6 及之前，一轮结束后行尾有两颗统计胶囊：用量和用时，各自点开一个弹窗；0.1.7-alpha.1 去掉了用时那一颗。开启本项把它加回用量胶囊右边，连同「本轮用时和速度」弹窗：本轮总用时，以及输出速度（TPS）与首 token 用时（TTFT）——后两项由会话日志内嵌的模型流重建，历史会话同样显示。',
+  'tweak.turnTimePill.title': '本轮用时和速度',
+  'tweak.turnTimePill.description': '0.1.6 及之前，一轮结束后行尾有两个可点开的读数：用量和用时，各自点开一个弹窗；0.1.7-alpha.1 去掉了用时那一个。开启本项把它加回用量右边，连同「本轮用时和速度」弹窗：本轮总用时，以及输出速度（TPS）与首 token 用时（TTFT）——后两项由会话日志内嵌的模型流重建，历史会话同样显示。',
   'tweak.turnTimePill.label': '用时 {duration}',
   'tweak.turnTimePill.pillTitle': '本轮用时和速度',
   'tweak.turnTimePill.duration': '本轮总用时',
@@ -330,8 +334,10 @@ const zh: Record<LocaleKey, string> = {
   'tweak.turnTimePill.ttft': '首 token 用时（TTFT）',
   'tweak.turnProcessCounts.title': '过程组显示调用次数',
   'tweak.turnProcessCounts.description': '0.1.6 及之前，折叠过程组的标题是一行计数：工具调用次数与消息条数，轮次起了子代理时还带 subagent 数；0.1.7-alpha.1 把它换成了用时。开启本项把 0.1.6 的计数接在用时后面，两半同时显示，计数随轮次进行实时增长，失败 / 停止 / 生成中的标题同样适用；没有可计数内容的轮次保持原样。',
-  'tweak.contextPillNoTooltip.title': '上下文胶囊不显示悬停信息',
-  'tweak.contextPillNoTooltip.description': '鼠标移到输入框下方的上下文胶囊上（0.1.6-alpha.2+ 新增）时，不再浮出"上下文已用 13%"的悬停提示。胶囊自身的悬停高亮与点开的明细弹窗不受影响；没有该胶囊的宿主上本项保持惰性。',
+  'tweak.opaqueStatDialogs.title': '统计弹窗不透明',
+  'tweak.opaqueStatDialogs.description': '0.1.7-alpha.1 把卡片材质换成了半透明 + 背景模糊。开启本项只把点开的统计弹窗换回 0.1.6 的不透明背景——输入框下方的会话统计与 token 用量（官方的「统计交互卡片」）、行尾的每轮用量与用时、以及上下文占用按钮点开的面板，共五张。其他菜单与面板（会话 / 工作区「…」菜单、模型选择、输入框的 / 与 @ 菜单、任务 / 队列 / dock 面板）保持 0.1.7 原样。',
+  'tweak.contextPillNoTooltip.title': '上下文占用按钮不显示悬停信息',
+  'tweak.contextPillNoTooltip.description': '鼠标移到输入框下方的上下文占用按钮（0.1.6-alpha.2+ 新增）上时，不再浮出"上下文已用 13%"的悬停提示。按钮自身的悬停高亮与点开的明细弹窗不受影响；没有该按钮的宿主上本项保持惰性。',
   'tweak.legacyContextMeter.title': '上下文圆环回到输入框内',
   'tweak.legacyContextMeter.description': '恢复 0.1.6-alpha.2 之前的上下文指示样式：28px 圆环按钮回到输入框工具行的发送键左侧，而不是卡片下方的胶囊。悬停读数与点击展开的占用明细保持不变；开启期间 DSH 自带的胶囊保持隐藏。',
   'tweak.workspaceClose.title': '工作区可关闭',

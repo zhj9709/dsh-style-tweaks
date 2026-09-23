@@ -132,6 +132,15 @@ export const TWEAKS: readonly TweakDescriptor[] = [
     descriptionKey: 'tweak.turnProcessCounts.description',
   },
   {
+    id: 'opaque-stat-dialogs',
+    settingKey: 'opaqueStatDialogs',
+    // Off: the translucent frosted material is 0.1.7-alpha.1's shipped look;
+    // restoring 0.1.6's opaque fill on the stat dialogs is opt-in.
+    defaultEnabled: false,
+    titleKey: 'tweak.opaqueStatDialogs.title',
+    descriptionKey: 'tweak.opaqueStatDialogs.description',
+  },
+  {
     id: 'legacy-context-meter',
     settingKey: 'legacyContextMeter',
     // Off: the capsule is 0.1.6-alpha.2's shipped affordance; the pre-alpha.2
