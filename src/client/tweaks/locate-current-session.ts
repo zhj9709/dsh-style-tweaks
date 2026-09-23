@@ -4,13 +4,13 @@
  * Adds a "locate current session" button to the left of the native search
  * button in the sidebar's "工作区" (workspaces) section header. Clicking it:
  *
- *   1. Finds the currently-selected session row in the sidebar tree.
- *   2. Locates its enclosing workspace group via the stable
- *      `[class*="groupSection"]` ancestor hook.
- *   3. If the parent workspace row is collapsed (`aria-expanded="false"`),
- *      clicks it to expand.
- *   4. Scrolls the session row to the center of the sidebar's visible area
- *      so the user can confirm "this is where I am".
+ *   1. Reads the current session's **id** off the conversation header.
+ *   2. Scrolls its sidebar row to the center of the sidebar's visible area,
+ *      when that row is mounted.
+ *   3. Otherwise resolves the session's workspace from the app stores and
+ *      opens that workspace's group — including the "show more" overflow —
+ *      until the row exists, then scrolls it to the center. The user can
+ *      then confirm "this is where I am" without hunting for it.
  *
  * ## Why DOM patching
  *
@@ -26,10 +26,17 @@
  *     `search.sessions.aria`) only as a fallback for a build that renames
  *     the fragment.
  *   • Breadcrumb: the same order (`crumbs` fragment; label fallback from
- *     `conversation` ns, key `session.hierarchy`).
+ *     `conversation` ns, key `session.hierarchy`). It is both where the
+ *     title fallback is read and the entry point for the id walk below.
+ *   • Current session id: the `sessionId` prop the conversation header
+ *     memoizes, read off the fiber chain starting at that breadcrumb nav
+ *     (see `headerSessionId`).
  *   • Selected session row: `[role="treeitem"][aria-selected="true"]`
  *     (ARIA `aria-selected` is part of the WAI-ARIA tree pattern, DSH
  *     uses it to mark the active row.)
+ *   • Session rows: `props.node.id`, which their `SessionNodeItem` memoizes —
+ *     the same identity the header carries, so a row is matched by id rather
+ *     than by whatever label it renders.
  *   • Workspace group container: closest element whose class attribute
  *     contains the substring `groupSection` (a semantic fragment DSH
  *     keeps even when its hashed prefix changes).
@@ -288,121 +295,214 @@ export function injectLocateCurrentSessionStyles(): () => void {
 }
 
 /**
- * Read the current session's title from the top breadcrumb. DSH renders
- * the session lineage chip as the `crumbs` nav; the current session's
- * button is the only `button[disabled]` inside it (DSH disables the
- * current crumb so it cannot be re-entered as a navigation target).
- *
- * The nav is resolved structurally first, through its localized
- * `conversation:session.hierarchy` aria-label only as a fallback — see
- * {@link anchorElement}.
- * @returns the trimmed title text, or null when no session is open.
+ * The breadcrumb nav carrying the current session's lineage, resolved
+ * structurally first and through its localized `aria-label` only as a
+ * fallback — see {@link anchorElement}.
  */
-function readCurrentSessionTitle(): string | null {
-  const nav = anchorElement(BREADCRUMB_NAV_SELECTOR, LABELLED_NAV_SELECTOR, breadcrumbLabel())
-  const btn = nav?.querySelector<HTMLButtonElement>('button[disabled]') ?? null
-  const text = btn?.textContent?.trim()
-  return text !== undefined && text.length > 0 ? text : null
+function breadcrumbNav(): HTMLElement | null {
+  return anchorElement(BREADCRUMB_NAV_SELECTOR, LABELLED_NAV_SELECTOR, breadcrumbLabel())
 }
 
 /**
- * Find the sidebar treeitem that hosts the given session title inside one
- * group. Scoped to the group the session's workspace resolved to, because the
- * title alone is not unique across the sidebar: two Workspaces may carry the
- * same label (their directories' basenames), and any two sessions may share a
- * title. For the same reason the group must be walked rather than assumed
- * expanded — a collapsed group renders no session rows at all.
+ * The id of the conversation on screen, read from the conversation header's
+ * own `sessionId` prop. Every header component between the breadcrumb nav and
+ * the app frame memoizes it (`ConversationSessionHeader`, `ConversationHeader`,
+ * `ConversationRoot`), so the nearest one walking up belongs to the session
+ * whose header this is — the same identity the sidebar row carries as
+ * `props.node.id`, which is what lets a row be found by id.
  *
- * The text match is a prefix match because sidebar rows append a relative
- * time ("1天" / "20小时") after the title.
+ * This is the anchor that replaced reading the title: a crumb is a *label*
+ * (two sessions may share one, and a session with no recorded ancestry is
+ * painted as its raw id instead of a title), while the id is what the sidebar
+ * and the session store both key on.
  *
- * Returns null when no match is found (e.g. the workspace is currently
- * collapsed, hiding its session rows).
+ * Undefined when no session is open (no header) or the props are unavailable;
+ * {@link currentSessionId} then falls back to the title.
  */
-function findSessionRow(title: string, group: HTMLElement): HTMLElement | null {
+function headerSessionId(): string | undefined {
+  const nav = breadcrumbNav()
+  if (nav === null) return undefined
+  return readUpFiberChain(nav, (props) => {
+    const id = props.sessionId
+    return typeof id === 'string' ? id : undefined
+  })
+}
+
+/**
+ * Read the current session's title from the top breadcrumb — the fallback
+ * path, for a build whose header does not hand us an id.
+ *
+ * Through 0.1.6 the current crumb was a `button[disabled]` (DSH disables the
+ * current crumb so it cannot be re-entered as a navigation target). From
+ * 0.1.7-alpha.1 onward it is a plain `<span class="…crumbCurrent">`: a button
+ * there subtracts itself from the desktop window's drag band, which would
+ * leave the title inert for dragging too (harness 92101e1a5b). Both shapes
+ * are read, the span first, because that is what current builds paint.
+ * @returns the trimmed title text, or null when no session is open.
+ */
+function readCurrentSessionTitle(): string | null {
+  const nav = breadcrumbNav()
+  const crumb = nav?.querySelector<HTMLElement>('[class*="crumbCurrent"]')
+    ?? nav?.querySelector<HTMLButtonElement>('button[disabled]')
+    ?? null
+  const text = crumb?.textContent?.trim()
+  return text !== undefined && text.length > 0 ? text : null
+}
+
+/** Stable hook for one session row (project header rows carry `aria-expanded`). */
+const SESSION_ROW_SELECTOR = '[role="treeitem"]:not([aria-expanded])'
+
+/**
+ * Find the sidebar treeitem rendering the given session inside one group,
+ * matched by the id its row memoizes ({@link sessionIdOfRow}) rather than by
+ * its label: two sessions may share a title, and the row appends a relative
+ * time ("1天" / "20小时") to whatever it shows. Scoped to the group the
+ * session's workspace resolved to, since a group renders only its own rows.
+ *
+ * Returns null when the group is collapsed (`aria-expanded="false"` — DSH then
+ * renders no session rows at all) or when the row hides behind the group's
+ * "show more" overflow cap.
+ */
+function findSessionRow(sessionId: string, group: HTMLElement): HTMLElement | null {
   if (group.querySelector<HTMLElement>(PROJECT_ROW_SELECTOR)?.getAttribute('aria-expanded') !== 'true') {
     return null
   }
-  for (const session of group.querySelectorAll<HTMLElement>('[role="treeitem"]:not([aria-expanded])')) {
-    if ((session.textContent ?? '').trimStart().startsWith(title)) {
-      return session
-    }
+  for (const row of group.querySelectorAll<HTMLElement>(SESSION_ROW_SELECTOR)) {
+    if (sessionIdOfRow(row) === sessionId) return row
   }
   return null
 }
 
 /**
- * Resolve the workspace **id** owning the current session via the app stores.
- * `ctx.get('sessions').list.byId` maps id→{title}; `ctx.get('workspaces')
- * .list.items[*].sessionIds` lists which sessions live in each workspace.
- *
- * The id, not the title, is what identifies the sidebar row: `WorkspaceView
- * .title` defaults to the directory basename, so two Workspaces under
- * different parents can share one (the Host only rejects a colliding
- * *rename*, `workspace/name-conflict`), and a title-keyed lookup then opens
- * whichever of the two happens to come first.
- *
- * Returns null when either store is unavailable, the session is not present
- * in any workspace (ungrouped / archived), or the breadcrumb title does not
- * match any known session.
+ * The sidebar row DSH itself marks as the current session, when it really is
+ * the session we are looking for. The `aria-selected` marker is what makes
+ * this the O(1) fast path; the id check is what keeps it honest — a marker
+ * left on another row is not a hit.
  */
-function resolveWorkspaceId(
-  title: string,
-  sessionList: SessionListShape | undefined,
-  workspaceList: WorkspaceListShape | undefined,
-): string | null {
-  if (sessionList === undefined || workspaceList === undefined) return null
-  const sessions = sessionList.getSnapshot()
-  let sessionId: string | undefined
-  for (const [id, summary] of Object.entries(sessions.byId)) {
-    if (summary?.title === title) {
-      sessionId = id
-      break
-    }
+function activeSessionRow(sessionId: string): HTMLElement | null {
+  const row = document.querySelector<HTMLElement>(SELECTED_SESSION_SELECTOR)
+  return row !== null && sessionIdOfRow(row) === sessionId ? row : null
+}
+
+/**
+ * The session id behind a title, via `ctx.get('sessions').list.byId`
+ * (id → {title}). Only the title fallback needs this — the id path already
+ * holds the identity and skips both the store and the ambiguity. A title two
+ * sessions share resolves to whichever comes first, which is the best a
+ * title-keyed lookup can do.
+ */
+function sessionIdByTitle(title: string, sessionList: SessionListShape | undefined): string | null {
+  if (sessionList === undefined) return null
+  for (const [id, summary] of Object.entries(sessionList.getSnapshot().byId)) {
+    if (summary?.title === title) return id
   }
-  if (sessionId === undefined) return null
+  return null
+}
+
+/**
+ * The session the user is looking at, as an **id**: the conversation header's
+ * own prop first ({@link headerSessionId}), the breadcrumb title resolved
+ * through the session store second. Null when no session is open at all —
+ * which is also what disables the button.
+ */
+function currentSessionId(sessionList: SessionListShape | undefined): string | null {
+  const direct = headerSessionId()
+  if (direct !== undefined) return direct
+  const title = readCurrentSessionTitle()
+  return title === null ? null : sessionIdByTitle(title, sessionList)
+}
+
+/**
+ * Resolve the **workspace id** owning a session, from
+ * `ctx.get('workspaces').list.items[*].sessionIds`. Matched by id rather than
+ * by searching the sidebar for a label, because `WorkspaceView.title` defaults
+ * to the directory basename: two Workspaces under different parents can share
+ * one (the Host only rejects a colliding *rename*, `workspace/name-conflict`),
+ * and a label-keyed search then opens whichever of the two comes first.
+ *
+ * Returns null when the store is unavailable or the session is in no workspace
+ * at all (ungrouped / archived) — there is nothing for the sidebar to reveal
+ * then.
+ */
+function workspaceOf(sessionId: string, workspaceList: WorkspaceListShape | undefined): string | null {
+  if (workspaceList === undefined) return null
   for (const ws of workspaceList.getSnapshot().items) {
     if (ws.sessionIds.includes(sessionId)) return ws.workspaceId
   }
   return null
 }
 
-/** Minimal shape of React's internal fiber node, for the props walk only. */
+/** Minimal shape of React's internal fiber node, for the props walks only. */
 interface FiberLike {
   readonly memoizedProps?: unknown
   readonly return?: FiberLike | null | undefined
 }
 
+/** Component props, as far as the two identity walks below need them. */
+interface FiberProps {
+  readonly sessionId?: unknown
+  readonly node?: { readonly id?: unknown } | null
+  readonly group?: { readonly key?: unknown } | null
+}
+
 /** React keys its internal fiber on the DOM node with this prefix. */
 const FIBER_KEY_PREFIX = '__reactFiber$'
-/** Cap the upward walk; `ProjectRowItem` sits a handful of levels above the row. */
+/** Cap the upward walk; every component read here sits a handful of levels above its DOM node. */
 const FIBER_WALK_LIMIT = 32
-/** Row element → its (stable) React fiber key. Cached because `Object.keys` allocates. */
+/** Node element → its (stable) React fiber key. Cached because `Object.keys` allocates. */
 const fiberKeys = new WeakMap<Element, string>()
+
+/** Root fiber of one element, or undefined when React did not attach one. */
+function rootFiberOf(el: Element): FiberLike | undefined {
+  let key = fiberKeys.get(el)
+  if (key === undefined) {
+    key = Object.keys(el).find(candidate => candidate.startsWith(FIBER_KEY_PREFIX))
+    if (key === undefined) return undefined
+    fiberKeys.set(el, key)
+  }
+  return (el as unknown as Record<string, FiberLike | undefined>)[key]
+}
+
+/**
+ * Walk up from an element to the nearest fiber whose props satisfy `read`.
+ * Deliberately forgiving, the same way `project-running-indicator.ts` reads
+ * rows: a missing fiber, a renamed component or a recycled node all read as
+ * `undefined`, and the caller then finds nothing rather than the wrong thing.
+ */
+function readUpFiberChain<T>(el: Element, read: (props: FiberProps) => T | undefined): T | undefined {
+  let fiber = rootFiberOf(el)
+  for (let depth = 0; fiber != null && depth < FIBER_WALK_LIMIT; depth++) {
+    const value = read((fiber.memoizedProps ?? {}) as FiberProps)
+    if (value !== undefined) return value
+    fiber = fiber.return ?? undefined
+  }
+  return undefined
+}
+
+/**
+ * The session id behind one sidebar session row: `SessionNodeItem` memoizes
+ * `props.node.id`. Undefined for a project header row, which memoizes
+ * `props.group.key` instead — the two walks never read each other's rows.
+ */
+function sessionIdOfRow(row: Element): string | undefined {
+  return readUpFiberChain(row, (props) => {
+    const id = props.node?.id
+    return typeof id === 'string' ? id : undefined
+  })
+}
 
 /**
  * Group key behind one project header row: `ProjectRowItem` memoizes
  * `props.group.key`, which is the `WorkspaceId` (or `''` for the Ungrouped
- * bucket). Same defensive walk as `project-running-indicator.ts`, and for the
- * same reason: the rendered label is not a usable identity. A missing fiber,
- * a renamed component or a recycled row all read as `undefined`, and the
- * caller then simply finds nothing rather than the wrong group.
+ * bucket; `''` is a value, not a miss, hence the string test). Read for the
+ * same reason {@link sessionIdOfRow} exists: the rendered label is not a
+ * usable identity — two Workspaces may share one.
  */
 function groupKeyOfRow(row: Element): string | undefined {
-  let key = fiberKeys.get(row)
-  if (key === undefined) {
-    key = Object.keys(row).find(candidate => candidate.startsWith(FIBER_KEY_PREFIX))
-    if (key === undefined) return undefined
-    fiberKeys.set(row, key)
-  }
-  let fiber = (row as unknown as Record<string, FiberLike | undefined>)[key]
-  for (let depth = 0; fiber != null && depth < FIBER_WALK_LIMIT; depth++) {
-    const props = (fiber.memoizedProps ?? {}) as { readonly group?: { readonly key?: unknown } | null }
-    const groupKey = props.group?.key
-    if (typeof groupKey === 'string') return groupKey
-    fiber = fiber.return ?? undefined
-  }
-  return undefined
+  return readUpFiberChain(row, (props) => {
+    const key = props.group?.key
+    return typeof key === 'string' ? key : undefined
+  })
 }
 
 /**
@@ -440,79 +540,81 @@ function expandOverflow(group: HTMLElement): void {
 
 /**
  * Perform the locate action. Steps:
- *   1. Read the current session title from the breadcrumb (the only DOM
- *      anchor that survives a sidebar rebuild).
- *   2. Fast path: if the sidebar already has the selected session row,
- *      scroll to it. This covers the common "all open" case in O(1).
- *   3. Slow path: resolve the session → workspace via the app stores,
- *      find the workspace's projectRow in the sidebar, and click it open
- *      so DSH mounts the session row on the next render.
- *   4. After the click, the new treeitem carries `aria-selected="true"`
- *      (DSH marks the current session on every tree paint). One rAF is
- *      enough for the synchronous DOM update; we then scroll it into view.
+ *   1. Read the current session id from the conversation header — the anchor
+ *      that survives a sidebar rebuild, since the sidebar's own row may not
+ *      exist at all while the header always does.
+ *   2. Fast path: when the sidebar renders that row (DSH marks the current one
+ *      `aria-selected`), scroll to it. Covers the common "workspace open, row
+ *      in sight" case in O(1).
+ *   3. Slow path: resolve the session's workspace from the app stores, find
+ *      that workspace's projectRow in the sidebar and click it open, so DSH
+ *      mounts the group's session rows on the next render.
+ *   4. Scroll the row into view, opening the group's overflow first when the
+ *      group caps its rows and the current session sits behind it. One rAF is
+ *      enough for the click's re-render; we then scroll what it produced.
  */
 function performLocate(
   sessionList?: SessionListShape,
   workspaceList?: WorkspaceListShape,
 ): void {
-  const title = readCurrentSessionTitle()
-  if (title === null) return
+  const sessionId = currentSessionId(sessionList)
+  if (sessionId === null) return
+  const scroll = (row: HTMLElement): void => {
+    row.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }
 
-  // Fast path: the selected session row is already mounted.
-  let session = document.querySelector<HTMLElement>(SELECTED_SESSION_SELECTOR)
-  if (session !== null && (session.textContent ?? '').trimStart().startsWith(title)) {
-    session.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  // Fast path: the row is mounted, so the selection marker finds it.
+  const mounted = activeSessionRow(sessionId)
+  if (mounted !== null) {
+    scroll(mounted)
     return
   }
 
-  // Slow path: the workspace is collapsed (the session row is not in the
-  // DOM). Look up the owning workspace id from the app stores.
-  const workspaceId = resolveWorkspaceId(title, sessionList, workspaceList)
+  // Slow path: the row is not in the DOM. Resolve the owning workspace, then
+  // open whatever is hiding the group's rows.
+  const workspaceId = workspaceOf(sessionId, workspaceList)
   if (workspaceId === null) {
-    // No store or no mapping — bail. The breadcrumb still tells the user
-    // which session is current.
+    // The session is in no workspace the sidebar lists (archived, say).
+    // Nothing to reveal.
     return
   }
   const hit = findProjectRowByGroupKey(workspaceId)
-  if (hit === null) {
-    // The session belongs to a workspace that's not in the sidebar at all
-    // (e.g. archived). Nothing to reveal.
-    return
-  }
+  if (hit === null) return
   const { projectRow, group } = hit
-  const collapsed = projectRow.getAttribute('aria-expanded') === 'false'
-  // Scroll the selected row into view once it exists; when it still doesn't
-  // (the group caps rendered rows and the current session hides behind the
-  // "expand remaining N sessions" overflow), click the overflow open first
-  // and re-query on the next frame.
+
+  /** The row we are after, or null while something still hides it. */
+  const findRow = (): HTMLElement | null => activeSessionRow(sessionId) ?? findSessionRow(sessionId, group)
+
+  /**
+   * Scroll the row into view, clicking the group's "show more" overflow open
+   * first when the row is capped out of the DOM. The click re-renders
+   * synchronously, so one rAF (which runs after that paint) is enough to see
+   * what it produced.
+   */
   const revealAndScroll = (): void => {
-    const next = document.querySelector<HTMLElement>(SELECTED_SESSION_SELECTOR)
-    if (next !== null) {
-      next.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    const row = findRow()
+    if (row !== null) {
+      scroll(row)
       return
     }
     expandOverflow(group)
     requestAnimationFrame(() => {
-      document.querySelector<HTMLElement>(SELECTED_SESSION_SELECTOR)
-        ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      const late = findRow()
+      if (late !== null) scroll(late)
     })
   }
-  if (collapsed) {
-    // Click triggers DSH's expand handler, which mounts the session rows
-    // and marks the current one with `aria-selected="true"`.
+
+  if (projectRow.getAttribute('aria-expanded') === 'false') {
+    // The click runs DSH's expand handler, which mounts the session rows.
     projectRow.click()
     requestAnimationFrame(revealAndScroll)
-  } else {
-    // Workspace open but the selected marker is missing (DSH state edge
-    // case, or the row hides behind the overflow button): re-query by
-    // title, scoped to this workspace's group.
-    session = findSessionRow(title, group)
-    if (session !== null) {
-      session.scrollIntoView({ block: 'center', behavior: 'smooth' })
-    } else {
-      revealAndScroll()
-    }
+    return
   }
+  // Workspace already open: scan its group by id, and fall through to the
+  // overflow pass when the row is behind the group's row cap.
+  const row = findSessionRow(sessionId, group)
+  if (row !== null) scroll(row)
+  else revealAndScroll()
 }
 
 
@@ -638,14 +740,13 @@ function attachTooltip(btn: HTMLButtonElement): void {
  *   - Setting `title` would summon the browser-native tooltip, which
  *     has a different visual style from the rest of the sidebar.
  *
- * The "has session" check uses the breadcrumb (`nav[class*="crumbs"]`
- * contains a `button[disabled]` with the session title) — NOT the
- * sidebar's `aria-selected` row. The breadcrumb survives sidebar rebuilds
- * AND survives the workspace being collapsed (the selected treeitem
- * itself is removed from the DOM in that case).
+ * The "has session" check is {@link currentSessionId} — the conversation
+ * header's own session id, NOT the sidebar's `aria-selected` row. The header
+ * survives sidebar rebuilds AND survives the workspace being collapsed (the
+ * selected treeitem itself is removed from the DOM in that case).
  */
-function syncButtonEnabledState(btn: HTMLButtonElement): void {
-  const hasSession = readCurrentSessionTitle() !== null
+function syncButtonEnabledState(btn: HTMLButtonElement, sessionList: SessionListShape | undefined): void {
+  const hasSession = currentSessionId(sessionList) !== null
   const { label, disabled } = buttonCopy()
   btn.disabled = !hasSession
   if (hasSession) {
@@ -684,8 +785,11 @@ function syncButtonEnabledState(btn: HTMLButtonElement): void {
  * `refresh` is the cheap path called from the observer: re-sync the existing
  * button's enabled state on every tick. The microtask coalesces a burst
  * of mutations into one re-sync.
+ *
+ * `sessionList` is only consulted by the enabled-state check's title fallback
+ * ({@link currentSessionId}); undefined simply means that fallback is skipped.
  */
-function mountButton(refresh: boolean = false): HTMLButtonElement | null {
+function mountButton(refresh: boolean = false, sessionList?: SessionListShape): HTMLButtonElement | null {
   // Anchor: the structural class fragment first (no translation in the
   // path), the localized aria-label second — re-evaluated per call, so a
   // live locale switch re-resolves the fallback on the next observer tick.
@@ -697,11 +801,11 @@ function mountButton(refresh: boolean = false): HTMLButtonElement | null {
   // Idempotency: refresh an existing button in place instead of re-mounting.
   const existing = slot.querySelector<HTMLButtonElement>('button.cst-locate-btn')
   if (existing !== null) {
-    if (refresh) syncButtonEnabledState(existing)
+    if (refresh) syncButtonEnabledState(existing, sessionList)
     return existing
   }
   const btn = buildButton()
-  syncButtonEnabledState(btn)
+  syncButtonEnabledState(btn, sessionList)
   slot.insertBefore(btn, searchContainer)
   return btn
 }
@@ -776,7 +880,7 @@ export function setupLocateCurrentSession(ctx: ClientContext): () => void {
   }
 
   // Try once synchronously so the first paint already shows the button.
-  wire(mountButton())
+  wire(mountButton(false, sessionList))
 
   // Watch for the search button to appear / be replaced (DSH rebuilds the
   // sidebar header on width toggle, workspace switch, and other view
@@ -793,7 +897,7 @@ export function setupLocateCurrentSession(ctx: ClientContext): () => void {
       // refresh=true re-syncs the existing button's enabled state on every
       // tick; mountButton falls back to a no-op mount when the button is
       // already there. The microtask coalesces the burst into one re-sync.
-      wire(mountButton(true))
+      wire(mountButton(true, sessionList))
     })
   }
   const observer = new MutationObserver(schedule)
