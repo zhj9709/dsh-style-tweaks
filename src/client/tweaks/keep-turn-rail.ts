@@ -40,18 +40,21 @@
  *
  * ## Fix
  *
- * Restore the slot's `display`. The slot is the scrollport's direct child that
- * holds the rail `<nav>`, and the scrollport is the only element that has the
- * chat column as a DIRECT child — `[data-chat-flow]` is a hand-written, stable
+ * Restore the rail's `display`. `[data-chat-flow]` is a hand-written, stable
  * attribute in `ChatView.tsx` (`<div className={css.column} data-chat-flow="">`).
- * That gives a selector with no CSS-Modules hash and no translated string:
+ * The conversation frame contains that column as a DESCENDANT, and its own
+ * direct child holding the rail `<nav>` is the slot. Older 0.1.5/0.1.6 builds
+ * put the column directly in the scrollport; 0.1.7 introduced a root / scroller
+ * pair between the frame and the column. Matching a descendant rather than a
+ * direct child covers both shapes without using a CSS-Modules hash or a
+ * translated string:
  *
- *   :has(> [data-chat-flow]) > *:has(> nav):not([data-chat-flow])
+ *   :has([data-chat-flow]) > *:has(> nav):not([data-chat-flow])
  *
  * Stable markers only:
  *
- *   • `[data-chat-flow]` — the chat column, hardcoded in ChatView.tsx (the
- *     same marker `stable-turn-rail.ts` anchors on).
+ *   • `[data-chat-flow]` — the chat column, hardcoded in ChatView.tsx (a
+ *     hand-written, stable attribute).
  *   • the `nav` element — `TurnNavigator.tsx` renders `<div className={css.slot}>
  *     <nav className={css.frame} …>`; the only other direct child of the
  *     scrollport that is not the column is the back-to-bottom slot, which
@@ -62,9 +65,10 @@
  * selector pinning en/zh would silently stop matching on any other language)
  * and the CSS-Modules class names (re-hashed on every DSH build).
  *
- * `display: block !important` is the whole override: the shipped declaration
- * is a plain (non-important) `display: none` inside a container query, so an
- * important declaration wins regardless of order or of the hash in use.
+ * 0.1.5/0.1.6 hid the slot itself; 0.1.7 keeps the slot visible but hides its
+ * child `<nav>`. Both declarations are plain (non-important) `display: none`
+ * rules inside a container query, so `display: block !important` on both
+ * elements wins regardless of order or of the class hash in use.
  *
  * ## Known trade-offs
  *
@@ -78,13 +82,16 @@
  * this tweak trades that behaviour for keeping the navigation affordance.
  */
 
+const KEEP_TURN_RAIL_SELECTOR = ':has([data-chat-flow]) > *:has(> nav):not([data-chat-flow])'
+
 const KEEP_TURN_RAIL_CSS = `
-/* The chat scrollport: the only element that holds the chat column as a
-   direct child. Its rail slot is the other direct child that wraps a <nav>
-   (the chat column itself is excluded in case a future build nests a <nav>
-   right under it). Restores the slot the host's
-   \`@container (max-width:900px){ .slot{display:none} }\` hides away. */
-:has(> [data-chat-flow]) > *:has(> nav):not([data-chat-flow]) {
+/* The conversation frame holds the chat column as a descendant (0.1.7 nests
+   it under a root / scroller pair) and the rail slot as a direct child that
+   wraps a <nav>. The column itself is excluded in case a future build nests
+   a <nav> right under it. Restores both the slot (0.1.5/0.1.6) and the rail
+   <nav> (0.1.7), each hidden by a plain display:none container-query rule. */
+${KEEP_TURN_RAIL_SELECTOR},
+${KEEP_TURN_RAIL_SELECTOR} > nav {
   display: block !important;
 }
 `
@@ -97,8 +104,11 @@ export function injectKeepTurnRailStyles(): () => void {
     style = document.createElement('style')
     style.dataset.tweak = 'cst'
     style.dataset.tweakCss = KEEP_TURN_RAIL_CSS_ID
-    style.textContent = KEEP_TURN_RAIL_CSS
     document.head.appendChild(style)
   }
+  // TextContent is refreshed in place rather than only on creation: the HMR
+  // receiver can load a new bundle before this tweak's old <style> is torn
+  // down, and an existing node would otherwise retain the stale selector.
+  if (style.textContent !== KEEP_TURN_RAIL_CSS) style.textContent = KEEP_TURN_RAIL_CSS
   return () => { style?.remove() }
 }
