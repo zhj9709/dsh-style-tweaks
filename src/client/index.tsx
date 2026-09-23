@@ -28,12 +28,10 @@ import {
   MAX_DIALOG_WIDTH,
   MAX_HISTORY_PAGE_SIZE,
   MAX_RIGHTBAR_WIDTH_PERCENT,
-  MAX_THINK_HEIGHT,
   MIN_DIALOG_WIDTH,
   MIN_HISTORY_PAGE_SIZE,
   MIN_RIGHTBAR_WIDTH_PERCENT,
   MIN_SIDE_MARGIN,
-  MIN_THINK_HEIGHT,
   STEP_HISTORY_PAGE_SIZE,
   resolveClientConfig,
   resolveDialogWidth,
@@ -51,7 +49,6 @@ import { setupProjectRunningIndicator } from './tweaks/project-running-indicator
 import { setupLocateCurrentSession } from './tweaks/locate-current-session.ts'
 import { setupSettingsNavScroll } from './tweaks/settings-nav-scroll.ts'
 import { setupSidebarMiddleClickClose } from './tweaks/sidebar-middle-click-close.ts'
-import { installThinkingScrollStyles } from './tweaks/thinking-scroll.ts'
 import { installRightbarInitialWidth } from './tweaks/rightbar-initial-width.ts'
 import { setupLegacyStatsLine } from './tweaks/legacy-stats-line.tsx'
 import { setupPillsCacheHitDecimals } from './tweaks/pills-cache-hit-decimals.tsx'
@@ -138,7 +135,7 @@ class SettingsApiError extends Error {
 const en = {
   nav: 'Style tweaks',
   settingsTitle: 'Style tweaks',
-  settingsIntro: 'Opt-in style tweaks for DSH: precise conversation column-width control (with presets and side margin), a fixed-height scrolling window for the think (reasoning) body, and a set of small fixes for the sidebar and the settings panel. Each toggle applies immediately and persists to your settings document.',
+  settingsIntro: 'Opt-in style tweaks for DSH: precise conversation column-width control (with presets and side margin), and a set of small fixes for the sidebar and the settings panel. Each toggle applies immediately and persists to your settings document.',
   sectionLayout: 'Layout',
   sectionTweaks: 'Tweaks',
   dialogWidth: 'Dialog width',
@@ -152,10 +149,6 @@ const en = {
   usePluginWidthOff: 'Off',
   sideMargin: 'Side margin',
   sideMarginHint: 'Whitespace in px kept on each side of the conversation area while plugin width control is on. The column is clamped to the dialog width and narrows when the sidebar opens or the window shrinks, never hugging the edges. Minimum 32 px.',
-  thinkFixedHeight: 'Fixed think height',
-  thinkFixedHeightHint: 'Cap the expanded think (reasoning) body at a fixed height and scroll the overflow, so a long thinking trace stops pushing the rest of the conversation out of view. Folding the row back to one line keeps working as usual. While a trace is still streaming, the window shows its top and you scroll for the tail.',
-  thinkHeight: 'Think height',
-  thinkHeightHint: 'Height of the fixed think body in px, between 120 and 1200.',
   rightbarInitialWidth: 'Right sidebar initial width',
   rightbarInitialWidthHint: 'Own the right sidebar\'s first-open width. OFF by default, which leaves DSH\'s own 45% in charge. When ON, the plugin writes the width once — the first time the sidebar opens in this page load — as a percentage of the session frame; a manual drag, and every later open, keeps your own width. Reload the page to apply the percentage again.',
   rightbarWidthPercent: 'Right sidebar width',
@@ -266,7 +259,7 @@ type LocaleKey = keyof typeof en
 const zh: Record<LocaleKey, string> = {
   nav: '样式调整',
   settingsTitle: '样式调整',
-  settingsIntro: 'DSH 界面的可选样式调整：对话列宽精确控制（含预设与两侧边距）、思考内容固定高度滚动，以及侧边栏与设置面板的一组小幅修复。每个开关立即生效并持久化到设置文档。',
+  settingsIntro: 'DSH 界面的可选样式调整：对话列宽精确控制（含预设与两侧边距），以及侧边栏与设置面板的一组小幅修复。每个开关立即生效并持久化到设置文档。',
   sectionLayout: '布局',
   sectionTweaks: '调整项',
   dialogWidth: '对话框宽度',
@@ -280,10 +273,6 @@ const zh: Record<LocaleKey, string> = {
   usePluginWidthOff: '关闭',
   sideMargin: '两侧边距',
   sideMarginHint: '插件宽度控制开启时，对话区域两侧保留的空白（px）。列宽被钳制为对话框宽度，侧边栏打开或窗口缩小时内容会收窄，不会贴住边缘。最低 32 px；关闭插件宽度控制后边距不生效，保持 DSH 原生行为。',
-  thinkFixedHeight: '思考内容固定高度',
-  thinkFixedHeightHint: '展开"深度思考"正文时限制为固定高度，超出部分滚动查看，很长的思考不再把后面的回复顶出视野；收起后照旧恢复为一行摘要。思考仍在生成时窗口显示开头，可滚动查看后续内容。',
-  thinkHeight: '思考内容高度',
-  thinkHeightHint: '思考内容的显示高度（px，120–1200）。',
   rightbarInitialWidth: '右侧边栏初始宽度',
   rightbarInitialWidthHint: '接管右侧边栏首次打开时的宽度。默认关闭，此时保持 DSH 自身的 45% 不变；开启后仅在本次页面加载后的第一次打开时按会话窗口的百分比写入一次，之后手动拖拽、关闭再打开都保留你自己拖出来的宽度，刷新页面后该百分比会重新生效。',
   rightbarWidthPercent: '右侧边栏宽度',
@@ -934,13 +923,11 @@ function SettingsSection({ controller, t }: SettingsSectionProps) {
 
   const [widthDraft, setWidthDraft] = useState<string>(String(resolved.dialogWidth))
   const [marginDraft, setMarginDraft] = useState<string>(String(resolved.sideMargin))
-  const [thinkHeightDraft, setThinkHeightDraft] = useState<string>(String(resolved.thinkHeight))
   const [rightbarWidthDraft, setRightbarWidthDraft] = useState<string>(String(resolved.rightbarWidthPercent))
   const [historyPageSizeDraft, setHistoryPageSizeDraft] = useState<string>(String(resolved.historyPageSize))
 
   useEffect(() => { setWidthDraft(String(resolved.dialogWidth)) }, [resolved.dialogWidth])
   useEffect(() => { setMarginDraft(String(resolved.sideMargin)) }, [resolved.sideMargin])
-  useEffect(() => { setThinkHeightDraft(String(resolved.thinkHeight)) }, [resolved.thinkHeight])
   useEffect(() => { setRightbarWidthDraft(String(resolved.rightbarWidthPercent)) }, [resolved.rightbarWidthPercent])
   useEffect(() => { setHistoryPageSizeDraft(String(resolved.historyPageSize)) }, [resolved.historyPageSize])
 
@@ -981,25 +968,6 @@ function SettingsSection({ controller, t }: SettingsSectionProps) {
     const next = Math.max(MIN_SIDE_MARGIN, resolved.sideMargin + delta)
     setMarginDraft(String(next))
     save('sideMargin', next)
-  }
-
-  const setThinkFixedHeight = (value: boolean): void => {
-    save('thinkFixedHeight', value)
-  }
-
-  const commitThinkHeight = (raw: string): void => {
-    setThinkHeightDraft(raw)
-    const parsed = Number(raw)
-    if (!Number.isFinite(parsed)) return
-    const clamped = Math.min(MAX_THINK_HEIGHT, Math.max(MIN_THINK_HEIGHT, Math.round(parsed)))
-    setThinkHeightDraft(String(clamped))
-    save('thinkHeight', clamped)
-  }
-
-  const stepThinkHeight = (delta: number): void => {
-    const next = Math.min(MAX_THINK_HEIGHT, Math.max(MIN_THINK_HEIGHT, resolved.thinkHeight + delta))
-    setThinkHeightDraft(String(next))
-    save('thinkHeight', next)
   }
 
   const setRightbarInitialWidth = (value: boolean): void => {
@@ -1147,41 +1115,6 @@ function SettingsSection({ controller, t }: SettingsSectionProps) {
                     onKeyDown={(event) => { if (event.key === 'Enter') commitSideMargin((event.target as HTMLInputElement).value) }}
                   />
                   <button type="button" aria-label="+" disabled={!writable} onClick={() => { stepSideMargin(4) }}>+</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : null}
-        <div className="cst-field">
-          <div className="cst-field-top">
-            <span className="cst-label">{t('thinkFixedHeight')}<Hint text={t('thinkFixedHeightHint')} /></span>
-            <div className="cst-controls">
-              <div className="cst-seg">
-                <button type="button" className={resolved.thinkFixedHeight ? 'cst-seg-active' : ''} disabled={!writable} onClick={() => { setThinkFixedHeight(true) }}>{t('tweakOn')}</button>
-                <button type="button" className={!resolved.thinkFixedHeight ? 'cst-seg-active' : ''} disabled={!writable} onClick={() => { setThinkFixedHeight(false) }}>{t('tweakOff')}</button>
-              </div>
-            </div>
-          </div>
-        </div>
-        {resolved.thinkFixedHeight ? (
-          <div className="cst-field">
-            <div className="cst-field-top">
-              <span className="cst-label">{t('thinkHeight')}<Hint text={t('thinkHeightHint')} /></span>
-              <div className="cst-controls">
-                <div className="cst-stepper">
-                  <button type="button" aria-label="−" disabled={!writable || resolved.thinkHeight <= MIN_THINK_HEIGHT} onClick={() => { stepThinkHeight(-20) }}>−</button>
-                  <input
-                    type="number"
-                    min={MIN_THINK_HEIGHT}
-                    max={MAX_THINK_HEIGHT}
-                    step={20}
-                    value={thinkHeightDraft}
-                    disabled={!writable}
-                    onChange={(event) => { setThinkHeightDraft(event.target.value) }}
-                    onBlur={(event) => { commitThinkHeight(event.target.value) }}
-                    onKeyDown={(event) => { if (event.key === 'Enter') commitThinkHeight((event.target as HTMLInputElement).value) }}
-                  />
-                  <button type="button" aria-label="+" disabled={!writable || resolved.thinkHeight >= MAX_THINK_HEIGHT} onClick={() => { stepThinkHeight(20) }}>+</button>
                 </div>
               </div>
             </div>
@@ -1483,15 +1416,11 @@ export function apply(ctx: ClientContext): void {
         if (injector === undefined) continue
         cleanups.push(injector(ctx, resolved, controller))
       }
-      // Layout-section feature with a numeric parameter (like the width axis
-      // above): not a registry boolean, so it mounts outside the TWEAKS loop.
-      if (resolved.thinkFixedHeight) {
-        cleanups.push(installThinkingScrollStyles(resolved.thinkHeight))
-      }
       // Right Sidebar initial width: a layout feature with a numeric
-      // parameter, mounted outside the TWEAKS loop for the same reason as the
-      // think cap above. Re-mounted on every settings change, which is also
-      // what makes the live preview work while the sidebar is open.
+      // parameter — not a registry boolean, so it mounts outside the TWEAKS
+      // loop (like the width axis above). Re-mounted on every settings
+      // change, which is also what makes the live preview work while the
+      // sidebar is open.
       if (resolved.rightbarInitialWidth) {
         cleanups.push(installRightbarInitialWidth(ctx, resolved.rightbarWidthPercent))
       }

@@ -17,10 +17,6 @@ export interface ResolvedStyleTweaksConfig {
   usePluginWidth: boolean
   /** Side margin in px applied to both sides of the conversation column. */
   sideMargin: number
-  /** Whether the think (reasoning) body is capped at a fixed height. */
-  thinkFixedHeight: boolean
-  /** Think body display height in px while `thinkFixedHeight` is on. */
-  thinkHeight: number
   /** Whether the stable-turn-rail tweak is enabled. */
   stableTurnRail: boolean
   /** Whether the session titles stay put with their ellipsis on hover. */

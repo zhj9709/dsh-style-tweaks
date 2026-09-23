@@ -26,14 +26,6 @@ export const DEFAULT_USE_PLUGIN_WIDTH = false
 export const DEFAULT_SIDE_MARGIN = 50
 /** Minimum side margin in px. */
 export const MIN_SIDE_MARGIN = 32
-/** Default: off — expanded think bodies keep growing with their content. */
-export const DEFAULT_THINK_FIXED_HEIGHT = false
-/** Default think body height in px while the cap is on. */
-export const DEFAULT_THINK_HEIGHT = 300
-/** Minimum think body height in px. */
-export const MIN_THINK_HEIGHT = 120
-/** Maximum think body height in px. */
-export const MAX_THINK_HEIGHT = 1200
 /** localStorage slot the native handle reads. */
 export const CONVERSATION_WIDTH_STORAGE_KEY = 'dsh.conversation.contentWidth'
 
@@ -118,17 +110,6 @@ export function resolveSideMargin(value: number | undefined): number {
 }
 
 /**
- * Normalize a think-body height value to px.
- * Must match `resolveThinkHeight` in src/config.ts.
- */
-export function resolveThinkHeight(value: number | undefined): number {
-  if (typeof value === 'number') {
-    return Math.min(MAX_THINK_HEIGHT, Math.max(MIN_THINK_HEIGHT, Math.round(value)))
-  }
-  return DEFAULT_THINK_HEIGHT
-}
-
-/**
  * Normalize a right-Sidebar width percentage.
  * Must match `resolveRightbarPercent` in src/config.ts.
  */
@@ -171,8 +152,6 @@ export function resolveClientConfig(
     dialogWidth: resolveDialogWidth(value?.dialogWidth),
     usePluginWidth: value?.usePluginWidth ?? DEFAULT_USE_PLUGIN_WIDTH,
     sideMargin: resolveSideMargin(value?.sideMargin),
-    thinkFixedHeight: value?.thinkFixedHeight ?? DEFAULT_THINK_FIXED_HEIGHT,
-    thinkHeight: resolveThinkHeight(value?.thinkHeight),
     stableTurnRail: value?.stableTurnRail ?? DEFAULT_STABLE_TURN_RAIL,
     stableSessionTitle: value?.stableSessionTitle ?? DEFAULT_STABLE_SESSION_TITLE,
     hideSessionHoverActions: value?.hideSessionHoverActions ?? DEFAULT_HIDE_SESSION_HOVER_ACTIONS,

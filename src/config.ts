@@ -56,18 +56,6 @@ export interface StyleTweaksConfig {
    */
   sideMargin?: number
   /**
-   * Cap the expanded think (reasoning) body — the text under the 深度思考
-   * disclosure row — at a fixed height and scroll the overflow, so a long
-   * thinking trace stops pushing the rest of the conversation out of view.
-   * Off (default): the body keeps growing with its content, as shipped.
-   */
-  thinkFixedHeight?: boolean
-  /**
-   * Display height in px for the think body while `thinkFixedHeight` is on.
-   * Clamped to [120, 1200] on read.
-   */
-  thinkHeight?: number
-  /**
    * Whether the custom history page size is active. Off (default): DSH's
    * stock 50-message pages stand and `historyPageSize` is inert (its row is
    * hidden from the panel). On: pagination requests are raised to
@@ -326,14 +314,6 @@ export const DEFAULT_USE_PLUGIN_WIDTH = false
 export const DEFAULT_SIDE_MARGIN = 50
 /** Minimum side margin in px — below 32 the gap becomes too tight. */
 export const MIN_SIDE_MARGIN = 32
-/** Default: off — expanded think bodies keep growing with their content. */
-export const DEFAULT_THINK_FIXED_HEIGHT = false
-/** Default think body height in px while the cap is on (≈15 body lines). */
-export const DEFAULT_THINK_HEIGHT = 300
-/** Minimum think body height in px — below this the window is too cramped to read. */
-export const MIN_THINK_HEIGHT = 120
-/** Maximum think body height in px — past this, uncapped growth is the better tool. */
-export const MAX_THINK_HEIGHT = 1200
 /**
  * localStorage slot the native WidthHandle reads/writes; kept here so a
  * future rename of the host key only needs touching one place. We mirror
@@ -471,8 +451,6 @@ const FIELDS = {
   dialogWidth: z.number().min(MIN_DIALOG_WIDTH).max(MAX_DIALOG_WIDTH).default(DEFAULT_DIALOG_WIDTH),
   usePluginWidth: z.boolean().default(DEFAULT_USE_PLUGIN_WIDTH),
   sideMargin: z.number().min(MIN_SIDE_MARGIN).default(DEFAULT_SIDE_MARGIN),
-  thinkFixedHeight: z.boolean().default(DEFAULT_THINK_FIXED_HEIGHT),
-  thinkHeight: z.number().min(MIN_THINK_HEIGHT).max(MAX_THINK_HEIGHT).default(DEFAULT_THINK_HEIGHT),
   stableTurnRail: z.boolean().default(DEFAULT_STABLE_TURN_RAIL),
   stableSessionTitle: z.boolean().default(DEFAULT_STABLE_SESSION_TITLE),
   hideSessionHoverActions: z.boolean().default(DEFAULT_HIDE_SESSION_HOVER_ACTIONS),
@@ -531,10 +509,6 @@ export interface ResolvedStyleTweaksConfig {
   usePluginWidth: boolean
   /** Side margin in px applied to both sides of the conversation column. */
   sideMargin: number
-  /** Whether the think (reasoning) body is capped at a fixed height. */
-  thinkFixedHeight: boolean
-  /** Think body display height in px while `thinkFixedHeight` is on. */
-  thinkHeight: number
   /** Whether the stable-turn-rail tweak is enabled. */
   stableTurnRail: boolean
   /** Whether the session titles stay put with their ellipsis on hover. */
@@ -589,8 +563,6 @@ export function resolveConfig(config: StyleTweaksConfig = {}): ResolvedStyleTwea
     dialogWidth: resolveDialogWidth(config.dialogWidth),
     usePluginWidth: config.usePluginWidth ?? DEFAULT_USE_PLUGIN_WIDTH,
     sideMargin: config.sideMargin ?? DEFAULT_SIDE_MARGIN,
-    thinkFixedHeight: config.thinkFixedHeight ?? DEFAULT_THINK_FIXED_HEIGHT,
-    thinkHeight: resolveThinkHeight(config.thinkHeight),
     stableTurnRail: config.stableTurnRail ?? DEFAULT_STABLE_TURN_RAIL,
     stableSessionTitle: config.stableSessionTitle ?? DEFAULT_STABLE_SESSION_TITLE,
     hideSessionHoverActions: config.hideSessionHoverActions ?? DEFAULT_HIDE_SESSION_HOVER_ACTIONS,
@@ -629,14 +601,6 @@ export function resolveDialogWidth(value: number | undefined): number {
 export function resolveSideMargin(value: number | undefined): number {
   if (typeof value === 'number') return Math.max(MIN_SIDE_MARGIN, Math.round(value))
   return DEFAULT_SIDE_MARGIN
-}
-
-/** Normalize a think-body height value to px. */
-export function resolveThinkHeight(value: number | undefined): number {
-  if (typeof value === 'number') {
-    return Math.min(MAX_THINK_HEIGHT, Math.max(MIN_THINK_HEIGHT, Math.round(value)))
-  }
-  return DEFAULT_THINK_HEIGHT
 }
 
 /** Normalize a right-Sidebar width percentage. */
