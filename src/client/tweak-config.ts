@@ -77,10 +77,10 @@ export const MAX_RIGHTBAR_WIDTH_PERCENT = 70
 /** Whether the custom history page size is active. */
 export const DEFAULT_HISTORY_PAGE_SIZE_ENABLED = false
 /** Default page size once the control is enabled. */
-export const DEFAULT_HISTORY_PAGE_SIZE = 200
-/** Whether opening a session (cold start) also uses the raised page size. */
+export const DEFAULT_HISTORY_PAGE_SIZE = 500
+/** Whether opening a session (cold start) also uses the exact page size. */
 export const DEFAULT_HISTORY_PAGE_SIZE_COLD_START = true
-/** Minimum individual page size; below this there is nothing to raise. */
+/** Minimum configurable page size, matching the host's ordinary page floor. */
 export const MIN_HISTORY_PAGE_SIZE = 50
 /** Maximum messages per page (UI guardrail; see src/config.ts). */
 export const MAX_HISTORY_PAGE_SIZE = 1000

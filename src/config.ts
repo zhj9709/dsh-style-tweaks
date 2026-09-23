@@ -57,30 +57,27 @@ export interface StyleTweaksConfig {
   sideMargin?: number
   /**
    * Whether the custom history page size is active. Off (default): DSH's
-   * stock 50-message pages stand and `historyPageSize` is inert (its row is
-   * hidden from the panel). On: pagination requests are raised to
-   * `historyPageSize`. The last saved size survives an off period.
+   * native request sizes stand and `historyPageSize` is inert (its row is
+   * hidden from the panel). On: applicable requests use `historyPageSize`
+   * exactly. The last saved size survives an off period.
    */
   historyPageSizeEnabled?: boolean
   /**
-   * Raise the conversation-history page size above DSH's stock 50 messages.
-   * The cold open and every "Load earlier" click ask for 50 append messages;
-   * the client request carries `maxMessages` and the host validates it as any
-   * positive safe integer, so the browser client can simply ask for more.
-   * Clamped to [50, 1000] on read; default 200. Only read while
-   * `historyPageSizeEnabled` is on. Applies to the next request after a
-   * save. Page sizes are only ever raised, never lowered: "Load earlier" asks
-   * for the stock 50 and the turn-jump loader asks for `JUMP_PAGE_MESSAGES`
-   * (200), so both follow this value once it exceeds theirs — above 200 every
-   * turn jump gets heavier too.
+   * Exact message count carried by each applicable history request. The
+   * client request's `maxMessages` is rewritten to this value, whether above
+   * or below DSH's native choice. `turnWindow.minMessages` is synchronized to
+    * the same value so the host's early turn-window stop cannot truncate a
+    * larger configured page.
+   * Clamped to [50, 1000] on read; default 500. Only read
+   * while `historyPageSizeEnabled` is on. Applies to the next request after
+   * a save.
    */
   historyPageSize?: number
   /**
-   * Also raise the first screen a session opens with (`session/follow`) to
-   * `historyPageSize`. A larger first page shows more history with fewer
-   * "Load earlier" clicks but carries more data, so cold starts get slower;
-   * on (default) raises that first screen, off keeps the stock 50-message one.
-   * Hidden while `historyPageSize` is 50 (nothing to apply).
+   * Also use `historyPageSize` for the first screen a session opens with
+   * (`session/follow`). On (default): the cold open uses the exact configured
+   * size. Off: DSH's native first-screen request stands, while later history
+   * pagination still uses the configured size.
    */
   historyPageSizeColdStart?: boolean
   /**
@@ -318,10 +315,10 @@ export const CONVERSATION_WIDTH_STORAGE_KEY = 'dsh.conversation.contentWidth'
 /** Whether the custom history page size is active. */
 export const DEFAULT_HISTORY_PAGE_SIZE_ENABLED = false
 /** Default page size once the control is enabled. */
-export const DEFAULT_HISTORY_PAGE_SIZE = 200
-/** Whether opening a session (cold start) also uses the raised page size. */
+export const DEFAULT_HISTORY_PAGE_SIZE = 500
+/** Whether opening a session (cold start) also uses the exact page size. */
 export const DEFAULT_HISTORY_PAGE_SIZE_COLD_START = true
-/** Minimum individual page size; below this there is nothing to raise. */
+/** Minimum configurable page size, matching the host's ordinary page floor. */
 export const MIN_HISTORY_PAGE_SIZE = 50
 /**
  * Maximum messages per page. The host validates `maxMessages` as any

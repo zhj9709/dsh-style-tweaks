@@ -1,25 +1,26 @@
 /**
  * dsh-style-tweaks — history page-size transport tweak.
  *
- * DSH pages conversation history at a fixed 50 messages per request
- * (`PAGE_MESSAGES` in the session-controller client): the cold open of a
- * session and every "Load earlier" click ask the host for 50 append messages,
- * so a long agent session needs many clicks to walk back through.
+ * DSH chooses the native history page size in its session-controller client.
+ * The current 0.1.7 line asks for up to 500 messages on a cold open and on
+ * "Load earlier", while a turn jump additionally asks for at least 200
+ * messages through `turnWindow.minMessages`.
  *
- * The page size is a client-side request parameter, not a host setting: the
- * server validates `maxMessages` as any positive safe integer and answers
- * with whatever page was asked for. This tweak therefore rewrites the
- * outgoing requests in the browser:
+ * The page size is a client-side request parameter, not a host setting. This
+ * tweak rewrites the outgoing requests in the browser so an enabled setting
+ * is the EXACT value used (not merely a lower bound):
  *
  *   - `session/page` (unary POST /api/session/page): the "Load earlier"
- *     pagination and the turn-jump loader. Only raised, never shrunk — the
- *     jump loader asks for `JUMP_PAGE_MESSAGES` (200) per page, so a
- *     configured size above 200 raises the jump pages too and a smaller one
- *     leaves them at 200.
+ *     pagination and the turn-jump loader.
  *   - `session/follow` (Gateway WebSocket mux open frame): the first screen
  *     a session opens with. Only rewritten when the user opts in, because a
- *     larger first page carries more data and slows the cold open — exactly
- *     the trade-off the separate toggle makes explicit.
+ *     different first-page size trades cold-start work against how much
+ *     history appears immediately.
+ *
+ * The configured value is also written to `turnWindow.minMessages`: that
+ * window is the host's early-stop boundary, so leaving its native 50-message
+ * minimum in place would still truncate a 1000-message page after two turns.
+ * The host requires that minimum not to exceed `maxMessages`.
  *
  * Both transports funnel through browser primitives (`window.fetch` and
  * `WebSocket.prototype.send`), so one idempotent patch per page covers every
@@ -32,12 +33,11 @@
  * bundle reload in the same page evaluates this module again while the old
  * wrapper — which is never unwound — is still in the `fetch` / `send` chain:
  *
- *   - Module state would give each instance its own targets, so the old layer
- *     would re-raise whatever the new layer just raised (targets only ever go
- *     up: the old 300 would beat the new 200 and the page would keep sending
- *     300 for the rest of its life). One shared object makes every layer read
- *     the same target, and the second layer's `target > current` test is then
- *     false — wrapping twice is genuinely inert.
+ *   - Module state would give each instance its own targets, so an old layer
+ *     could keep applying a stale value after a newer bundle instance changed
+ *     it. One shared object makes every layer read the same target; the first
+ *     layer applies it and later layers see the same valid value, so wrapping
+ *     twice is genuinely idempotent.
  *   - `installed` is shared for the same reason: the wrappers are installed
  *     once per page, whichever instance got there first.
  *   - `generation` / `owner` are a monotonic ownership pair. Each instance
@@ -71,10 +71,18 @@ const STORAGE_KEY = 'dsh-style-tweaks.history-page-size'
 const SHARED_KEY = '__dsh_style_tweaks_history_page_size__'
 
 interface HistoryPageSizeTargets {
-  /** Page size to raise `maxMessages` to; 50 (= DSH stock) rewrites nothing. */
-  pageSize: number
-  /** Whether the `session/follow` cold-open first screen is raised too. */
+  /** Exact `maxMessages` value; null leaves every native request untouched. */
+  pageSize: number | null
+  /** Whether the `session/follow` cold-open first screen uses it too. */
   coldStart: boolean
+}
+
+interface HistoryRequest {
+  maxMessages?: number
+  turnWindow?: {
+    minMessages?: number
+    minTurns?: number
+  }
 }
 
 /** Per-page state shared by every bundle instance loaded into this page. */
@@ -104,7 +112,7 @@ function sharedState(): HistoryPageSizeState {
     installed: false,
     generation: 0,
     owner: 0,
-    targets: { pageSize: MIN_HISTORY_PAGE_SIZE, coldStart: false },
+    targets: { pageSize: null, coldStart: false },
   }
   host[SHARED_KEY] = created
   return created
@@ -121,10 +129,13 @@ function clampPageSize(value: number): number {
  * load can seed the targets before the settings read lands. A no-op once a
  * newer instance owns the targets.
  */
-export function setHistoryPageSizeTargets(pageSize: number, coldStart: boolean): void {
+export function setHistoryPageSizeTargets(pageSize: number | null, coldStart: boolean): void {
   const state = sharedState()
   if (state.owner !== myGeneration) return
-  state.targets = { pageSize: clampPageSize(pageSize), coldStart }
+  state.targets = {
+    pageSize: pageSize === null ? null : clampPageSize(pageSize),
+    coldStart,
+  }
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.targets))
   } catch {
@@ -144,12 +155,12 @@ export function resetHistoryPageSizeTargets(): void {
   const state = sharedState()
   if (state.owner !== myGeneration) return
   state.owner = 0
-  state.targets = { pageSize: MIN_HISTORY_PAGE_SIZE, coldStart: false }
+  state.targets = { pageSize: null, coldStart: false }
 }
 
 /** Load the persisted seed, replacing the targets from scratch. */
 function seedTargetsFromStorage(state: HistoryPageSizeState): void {
-  state.targets = { pageSize: MIN_HISTORY_PAGE_SIZE, coldStart: false }
+  state.targets = { pageSize: null, coldStart: false }
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw === null) return
@@ -219,22 +230,44 @@ function patchTransport(state: HistoryPageSizeState): void {
   }
 }
 
-/** Raise a request's page size; `null` leaves the request untouched. */
-function raisedCount(targets: HistoryPageSizeTargets, current: number): number | null {
-  return targets.pageSize > current ? targets.pageSize : null
+/**
+ * Apply the configured value exactly to both request limits.
+ *
+ * `maxMessages` is only the hard cap. DSH also stops at a turn boundary once
+ * `turnWindow.minMessages` is reached, so leaving the native 50-message
+ * minimum in place would still cut a 1000-message request off after two turns
+ * when each turn is large. Aligning the window minimum with the target makes
+ * the configured page size effective; the host still requires this minimum not
+ * to exceed `maxMessages`.
+ */
+function applyPageSize(request: HistoryRequest, targets: HistoryPageSizeTargets): boolean {
+  const target = targets.pageSize
+  if (target === null || typeof request.maxMessages !== 'number') return false
+  let changed = false
+  if (request.maxMessages !== target) {
+    request.maxMessages = target
+    changed = true
+  }
+  const turnWindow = request.turnWindow
+  if (
+    turnWindow !== undefined &&
+    typeof turnWindow.minMessages === 'number' &&
+    turnWindow.minMessages !== target
+  ) {
+    turnWindow.minMessages = target
+    changed = true
+  }
+  return changed
 }
 
 /** Rewrite the `session/page` request body; `null` = no change. */
 function rewritePageBody(body: string, targets: HistoryPageSizeTargets): string | null {
   try {
     const msg = JSON.parse(body) as {
-      payload?: { args?: { request?: { maxMessages?: number } } }
+      payload?: { args?: { request?: HistoryRequest } }
     }
     const request = msg?.payload?.args?.request
-    if (request === undefined || typeof request.maxMessages !== 'number') return null
-    const next = raisedCount(targets, request.maxMessages)
-    if (next === null) return null
-    request.maxMessages = next
+    if (request === undefined || !applyPageSize(request, targets)) return null
     return JSON.stringify(msg)
   } catch {
     return null
@@ -243,26 +276,22 @@ function rewritePageBody(body: string, targets: HistoryPageSizeTargets): string 
 
 /** Rewrite a `session/follow` mux open frame; `null` = no change. */
 function rewriteFollowFrame(data: string, targets: HistoryPageSizeTargets): string | null {
-  if (!targets.coldStart) return null
+  if (!targets.coldStart || targets.pageSize === null) return null
   try {
     const msg = JSON.parse(data) as {
       type?: string
       endpoint?: string
-      payload?: { args?: { maxMessages?: number; request?: { maxMessages?: number } } }
+      payload?: { args?: HistoryRequest & { request?: HistoryRequest } }
     }
     if (msg?.type !== 'open' || msg.endpoint !== 'session/follow') return null
     const args = msg.payload?.args
     if (args === undefined) return null
     // The wire shape wraps the follow request one level down:
     //   payload.args = { request: { address, assistantStream, maxMessages } }
-    // (verified against a live 0.1.6-alpha.2 frame). The flat `args.maxMessages`
-    // branch is the fallback, not the other way round — do not "clean up" the
-    // nested lookup, or cold-start rewriting silently stops happening.
+    // (verified against a live 0.1.6-alpha.2 frame). The flat spelling is the
+    // fallback, not the other way round.
     const holder = typeof args.maxMessages === 'number' ? args : (args.request ?? undefined)
-    if (holder === undefined || typeof holder.maxMessages !== 'number') return null
-    const next = raisedCount(targets, holder.maxMessages)
-    if (next === null) return null
-    holder.maxMessages = next
+    if (holder === undefined || !applyPageSize(holder, targets)) return null
     return JSON.stringify(msg)
   } catch {
     return null

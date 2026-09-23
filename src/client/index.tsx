@@ -153,11 +153,11 @@ const en = {
   rightbarWidthPercentHint: 'First-open width of the right sidebar as a percentage of the session frame, between 15 and 70. DSH clamps the result into its own range (at least 300 px, at most 70% of the frame), so a conversion below 300 px renders 300 px wide.',
   sectionHistory: 'History loading',
   historyPageSizeEnabled: 'Custom history page size',
-  historyPageSizeEnabledHint: 'DSH pages conversation history at a fixed 50 messages per request: the first screen when a session opens, and every click of "Load earlier". When ON, the browser asks for more messages per request so walking back through a long session takes fewer clicks. OFF (default) keeps DSH\'s own behaviour and hides the size rows below.',
+  historyPageSizeEnabledHint: 'DSH chooses its own history request size. When ON, the browser sends your exact configured size for "Load earlier" and turn jumps, whether that is larger or smaller than DSH\'s request. OFF (default) keeps DSH\'s own behaviour and hides the size rows below.',
   historyPageSize: 'Messages per history page',
-  historyPageSizeHint: 'Messages requested per history page while the control above is on. Larger values mean fewer clicks (and fewer round trips), at the cost of bigger single responses. A save applies to the next request. Page sizes are only ever raised, never lowered: "Load earlier" asks for the stock 50 and the turn-jump loader asks for 200, so both follow this value once it exceeds theirs — above 200, every turn jump gets heavier too.',
+  historyPageSizeHint: 'Exact maxMessages value used by each applicable history request, between 50 and 1000. Larger values mean fewer clicks (and fewer round trips) at the cost of bigger responses; smaller values reduce per-request work. A save applies to the next request. The host turn-window minimum is synchronized to the same value so a large page is not cut short after only two turns.',
   historyPageSizeColdStart: 'Apply to session open too',
-  historyPageSizeColdStartHint: 'When ON (default), opening a session (its first screen) also requests the larger page: history appears with fewer "Load earlier" clicks, but the initial load carries more data, so cold starts get slower. OFF keeps the stock 50-message first screen; the size then only affects "Load earlier" clicks. Hidden while the page size is 50 (nothing to apply).',
+  historyPageSizeColdStartHint: 'When ON (default), opening a session also uses the exact configured size for its first screen. OFF leaves DSH\'s native first screen untouched, while the size still applies to "Load earlier" and turn jumps. Larger values show more history immediately but carry more data and slow the cold open.',
   defaultAction: 'Default',
   saving: 'Saving…',
   applied: 'Applied',
@@ -275,11 +275,11 @@ const zh: Record<LocaleKey, string> = {
   rightbarWidthPercentHint: '右侧边栏首次打开时占会话窗口宽度的百分比，取值 15–70。DSH 会把结果钳制到它自己的范围内（最小 300 px、最大窗口的 70%），因此换算结果不足 300 px 时会按 300 px 显示。',
   sectionHistory: '历史加载',
   historyPageSizeEnabled: '自定义历史分页大小',
-  historyPageSizeEnabledHint: 'DSH 每次请求固定只加载 50 条对话消息：打开会话的首屏和每次点击「加载更早」都是 50。开启后浏览器会在每次请求时携带更大的条数，回看长会话需要的点击更少。关闭时（默认）保持 DSH 原生行为，下方条数设置行一并隐藏。',
+  historyPageSizeEnabledHint: 'DSH 原生会自行决定每次历史请求的条数。开启后，浏览器会让「加载更早」和轮次跳转精确使用你设置的条数，无论比 DSH 原生值大还是小。关闭时（默认）保持 DSH 原生行为，下方条数设置行一并隐藏。',
   historyPageSize: '每次加载的历史消息数',
-  historyPageSizeHint: '上方开关开启时，每次历史请求携带的消息条数。调大后回看长会话需要的点击次数（和请求往返次数）更少，代价是单次响应更大。保存后对下一次请求生效。分页只升不降：「加载更早」原生请求 50 条、轮次跳转加载器原生请求 200 条，设置值超过它们时都会按设置值放大——超过 200 时每次轮次跳转也会一并变重。',
+  historyPageSizeHint: '上方开关开启时，每次适用历史请求精确携带的消息条数（50–1000）。调大后回看长会话需要的点击和往返更少，代价是单次响应更大；调小则减少单次请求量。保存后对下一次请求生效。宿主的轮次窗口最小值会同步为同一个条数，避免大页数仍因原生下限只加载两轮。',
   historyPageSizeColdStart: '打开会话时同样生效',
-  historyPageSizeColdStartHint: '开启时（默认），打开会话（首屏）也按调大后的页数请求：历史出现得更完整、「加载更早」点得更少，但首次加载携带的数据更多，冷启动会变慢。关闭时首屏保持原生的 50 条，页数只影响「加载更早」。页数为 50 时本项隐藏（无可生效）。',
+  historyPageSizeColdStartHint: '开启时（默认），打开会话的首屏也精确使用设置的条数。关闭时首屏保持 DSH 原生行为，条数仍用于「加载更早」与轮次跳转。较大的值能立即显示更多历史，但会增加首次加载数据量、拖慢冷启动。',
   defaultAction: '默认',
   saving: '保存中…',
   applied: '已应用',
@@ -1196,22 +1196,17 @@ function SettingsSection({ controller, t }: SettingsSectionProps) {
                 </div>
               </div>
             </div>
-            {/* Hide only when the size cannot exceed the native 50-message
-                first screen — compare against the stock minimum, NOT the
-                configurable default (200), or the row would never show. */}
-            {resolved.historyPageSize > MIN_HISTORY_PAGE_SIZE ? (
-              <div className="cst-field">
-                <div className="cst-field-top">
-                  <span className="cst-label">{t('historyPageSizeColdStart')}<Hint text={t('historyPageSizeColdStartHint')} /></span>
-                  <div className="cst-controls">
-                    <div className="cst-seg">
-                      <button type="button" className={resolved.historyPageSizeColdStart ? 'cst-seg-active' : ''} disabled={!writable} onClick={() => { setHistoryPageSizeColdStart(true) }}>{t('tweakOn')}</button>
-                      <button type="button" className={!resolved.historyPageSizeColdStart ? 'cst-seg-active' : ''} disabled={!writable} onClick={() => { setHistoryPageSizeColdStart(false) }}>{t('tweakOff')}</button>
-                    </div>
+            <div className="cst-field">
+              <div className="cst-field-top">
+                <span className="cst-label">{t('historyPageSizeColdStart')}<Hint text={t('historyPageSizeColdStartHint')} /></span>
+                <div className="cst-controls">
+                  <div className="cst-seg">
+                    <button type="button" className={resolved.historyPageSizeColdStart ? 'cst-seg-active' : ''} disabled={!writable} onClick={() => { setHistoryPageSizeColdStart(true) }}>{t('tweakOn')}</button>
+                    <button type="button" className={!resolved.historyPageSizeColdStart ? 'cst-seg-active' : ''} disabled={!writable} onClick={() => { setHistoryPageSizeColdStart(false) }}>{t('tweakOff')}</button>
                   </div>
                 </div>
               </div>
-            ) : null}
+            </div>
           </>
         ) : null}
       </section>
@@ -1381,14 +1376,14 @@ export function apply(ctx: ClientContext): void {
       // snapshot has landed: the transport seeds itself from localStorage for
       // the cold window, and publishing the defaults before the first read
       // would clobber that seed. The push carries the EFFECTIVE settings — the
-      // master switch off means the stock 50-message pages stand, whatever the
-      // stored size says; the stored size survives for a re-enable. The
-      // cold-start flag is masked by the same switch, so an off feature skips
-      // the `session/follow` frame parse as well and not just the rewrite.
+      // master switch off passes a null target, so DSH's native request values
+      // stand whatever the stored size says; the stored size survives for a
+      // re-enable. The cold-start flag is masked by the same switch, so an off
+      // feature skips the `session/follow` frame parse as well as the rewrite.
       installHistoryPageSizeTransport()
       if (value !== undefined) {
         setHistoryPageSizeTargets(
-          resolved.historyPageSizeEnabled ? resolved.historyPageSize : MIN_HISTORY_PAGE_SIZE,
+          resolved.historyPageSizeEnabled ? resolved.historyPageSize : null,
           resolved.historyPageSizeEnabled && resolved.historyPageSizeColdStart,
         )
       }
