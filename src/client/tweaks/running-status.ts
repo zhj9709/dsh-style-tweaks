@@ -79,8 +79,8 @@ const RUNNING_STATUS_CSS_ID = 'cst-running-status'
 const STYLE_OWNER_ATTR = 'data-cst-running-status-owner'
 
 interface LiveDuration {
-  readonly elapsedMs: number | null
-  readonly clockText: string | null
+  readonly elapsedMs: number
+  readonly clockText: string
 }
 
 interface RunningControl {
@@ -161,34 +161,34 @@ function escapeRegExp(value: string): string {
 function durationMilliseconds(value: string, t: ChatTranslate): number | null {
   for (const format of DURATION_FORMATS) {
     const template = t(format.key, DURATION_MARKERS)
+    const fields = format.fields.map((field) => {
+      const marker = DURATION_MARKERS[field]
+      return { field, marker, at: template.indexOf(marker) }
+    })
+    if (fields.some(({ marker, at }) =>
+      at < 0 || template.indexOf(marker, at + marker.length) >= 0,
+    )) continue
+
+    // Custom locales may order the fields differently. Build capture groups in
+    // the template's actual order, then map each group back to its field name.
+    fields.sort((left, right) => left.at - right.at)
     let source = '^'
     let cursor = 0
-    let valid = true
-    for (const field of format.fields) {
-      const marker = DURATION_MARKERS[field]
-      const at = template.indexOf(marker, cursor)
-      if (at < 0 || template.indexOf(marker, at + marker.length) >= 0) {
-        valid = false
-        break
-      }
+    for (const { marker, at } of fields) {
       source += escapeRegExp(template.slice(cursor, at))
       source += '(\\d+)'
       cursor = at + marker.length
     }
-    if (!valid) continue
     source += escapeRegExp(template.slice(cursor)) + '$'
 
     const match = new RegExp(source, 'u').exec(value)
     if (match === null) continue
     const values: Partial<Record<DurationField, number>> = {}
-    for (let index = 0; index < format.fields.length; index += 1) {
-      const field = format.fields[index]
-      if (field === undefined) {
-        valid = false
-        break
-      }
+    let valid = true
+    for (let index = 0; index < fields.length; index += 1) {
+      const field = fields[index]?.field
       const parsed = Number(match[index + 1])
-      if (!Number.isSafeInteger(parsed) || parsed < 0) {
+      if (field === undefined || !Number.isSafeInteger(parsed) || parsed < 0) {
         valid = false
         break
       }
@@ -250,9 +250,10 @@ function liveDuration(label: string, t: ChatTranslate): LiveDuration | null {
     .trim()
   if (text === '') return null
   const elapsedMs = durationMilliseconds(text, t)
+  if (elapsedMs === null) return null
   return {
     elapsedMs,
-    clockText: elapsedMs === null ? null : formatClockDuration(elapsedMs, t),
+    clockText: formatClockDuration(elapsedMs, t),
   }
 }
 
@@ -300,12 +301,7 @@ function paintStatus(root: HTMLElement, control: RunningControl): void {
   if (label.textContent !== control.displayText) label.textContent = control.displayText
 
   let clock = root.querySelector<HTMLElement>(`:scope > .${CLOCK_CLASS}`)
-  if (
-    control.duration === null
-    || control.duration.elapsedMs === null
-    || control.duration.clockText === null
-    || control.duration.elapsedMs < CLOCK_DELAY_MS
-  ) {
+  if (control.duration === null || control.duration.elapsedMs < CLOCK_DELAY_MS) {
     clock?.remove()
     return
   }
