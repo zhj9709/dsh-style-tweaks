@@ -246,8 +246,9 @@ export interface StyleTweaksConfig {
    * still publishes them as its `data-turn-process-*` attributes — so the
    * tweak appends the 0.1.6 tally to whatever the header says (`用时 …` plus
    * the counts, both live; the other header states read the same way). A turn
-   * with no counted work keeps the stock header. Off (default): the 0.1.7
-   * header stays as shipped.
+   * with no counted work keeps the stock header. On (default): the 0.1.7
+   * elapsed-time label stays and the 0.1.6 tally is appended. An explicit
+   * `turnProcessCounts: false` keeps the stock header.
    */
   turnProcessCounts?: boolean
   /**
@@ -382,11 +383,11 @@ export const DEFAULT_PILLS_CACHE_HIT_DECIMALS = false
  */
 export const DEFAULT_TURN_TIME_PILL = false
 /**
- * Default: off — the header's elapsed time is 0.1.7-alpha.1's shipped label;
- * adding the 0.1.6 tally back next to it is opt-in, like the other
- * restorations of dropped chrome.
+ * Default: on — the 0.1.7 elapsed-time label remains and the 0.1.6 tally is
+ * restored beside it. Profiles that explicitly set `turnProcessCounts: false`
+ * keep the stock header; profiles with no value adopt the restored tally.
  */
-export const DEFAULT_TURN_PROCESS_COUNTS = false
+export const DEFAULT_TURN_PROCESS_COUNTS = true
 /**
  * Default: on — 0.1.7's process-group header moved the running label away from
  * the composer; restore the blue live-tail status that shipped through 0.1.6.

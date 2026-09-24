@@ -117,10 +117,10 @@ export const TWEAKS: readonly TweakDescriptor[] = [
   {
     id: 'turn-process-counts',
     settingKey: 'turnProcessCounts',
-    // Off: the header's elapsed time is 0.1.7-alpha.1's shipped label; putting
-    // the 0.1.6 tally back next to it is opt-in, like the other restorations
-    // of dropped chrome.
-    defaultEnabled: false,
+    // On: the header's elapsed time is 0.1.7-alpha.1's shipped label; this
+    // restores the 0.1.6 tally next to it by default, so Desktop and Web
+    // expose the same process-group counts.
+    defaultEnabled: true,
     titleKey: 'tweak.turnProcessCounts.title',
     descriptionKey: 'tweak.turnProcessCounts.description',
   },

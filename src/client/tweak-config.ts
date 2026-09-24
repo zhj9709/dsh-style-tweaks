@@ -52,8 +52,8 @@ export const DEFAULT_LEGACY_STATS_LINE = false
 export const DEFAULT_PILLS_CACHE_HIT_DECIMALS = false
 /** Default state of the turn-time-pill tweak (off: the 0.1.7 tail stays as shipped). */
 export const DEFAULT_TURN_TIME_PILL = false
-/** Default state of the turn-process-counts tweak (off: the 0.1.7 header stays as shipped). */
-export const DEFAULT_TURN_PROCESS_COUNTS = false
+/** Default state of the turn-process-counts tweak (on: restore the 0.1.6 tally). */
+export const DEFAULT_TURN_PROCESS_COUNTS = true
 /** Default state of the running-status tweak (on: restore the 0.1.6 live-tail line). */
 export const DEFAULT_RUNNING_STATUS = true
 /** Default state of the opaque-stat-dialogs tweak (off: the 0.1.7 frosted material stays). */
