@@ -755,7 +755,14 @@ export class SettingsClient {
       : { action: 'unset', field: write.field, expectedRevision: this.state.revision ?? 0 }
     return await apiRequest<Snapshot>({
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        // Desktop's renderer is file:// and reaches this loopback route over
+        // Electron IPC. The marker distinguishes that trusted carrier from a
+        // normal web origin; the server still requires its Electron/loopback
+        // fence before accepting it.
+        'X-DSH-Style-Tweaks-Write': '1',
+      },
       body: JSON.stringify(payload),
     })
   }

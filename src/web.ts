@@ -43,6 +43,17 @@ import {
 /** Exact route used by the browser Settings page. */
 export const SETTINGS_ROUTE = '/_dsh/style-tweaks/settings'
 
+/**
+ * Desktop serves its renderer from `file://` and carries fetch over Electron
+ * IPC, so the HTTP request cannot be same-origin with the app's loopback
+ * listener. This marker is a non-simple header: an ordinary web page cannot
+ * add it cross-origin without a CORS preflight, which this route does not
+ * answer. The Electron-runtime and loopback checks below therefore admit the
+ * trusted Desktop bridge without weakening Web's Origin fence.
+ */
+const DESKTOP_WRITE_HEADER = 'x-dsh-style-tweaks-write'
+const DESKTOP_WRITE_VALUE = '1'
+
 /** Public Settings snapshot; no secrets exist in this namespace. */
 export interface StyleTweaksSnapshot {
   writable: boolean
@@ -78,13 +89,39 @@ interface DescribeRow {
   user?: unknown
 }
 
-/** Accept state-changing requests only from the DSH Web application's origin. */
+function isLoopbackAuthority(authority: string): boolean {
+  try {
+    const { hostname } = new URL(`http://${authority}`)
+    return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '[::1]'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Accept state-changing requests from the DSH application. Web uses the
+ * normal Origin/Host equality check. Desktop is a special carrier: its page
+ * origin is `file:` (often serialized as `null`) while the IPC bridge calls
+ * the loopback HTTP listener, so accept that shape only inside Electron, only
+ * for loopback, and only with the client's non-simple marker header.
+ */
 export function sameOriginPost(req: IncomingMessage): boolean {
+  const origin = req.headers.origin
+  const host = req.headers.host
+  if (
+    typeof process !== 'undefined'
+    && typeof process.versions.electron === 'string'
+    && host !== undefined
+    && isLoopbackAuthority(host)
+    && req.headers[DESKTOP_WRITE_HEADER] === DESKTOP_WRITE_VALUE
+    && (origin === undefined || origin === 'null' || /^file:/iu.test(origin))
+  ) {
+    return true
+  }
+
   const fetchSite = req.headers['sec-fetch-site']
   if (fetchSite === 'cross-site') return false
-  const origin = req.headers.origin
   if (origin === undefined) return fetchSite === 'same-origin' || fetchSite === 'same-site' || fetchSite === 'none'
-  const host = req.headers.host
   if (host === undefined) return false
   try {
     const parsed = new URL(origin)
