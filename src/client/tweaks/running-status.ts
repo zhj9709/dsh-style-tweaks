@@ -105,6 +105,15 @@ const DURATION_FORMATS: readonly DurationFormat[] = [
   { key: 'duration.seconds', fields: ['seconds'] },
 ]
 
+// `ctx.locale.bind` returns formatted text rather than raw `{hours}` /
+// `{minutes}` templates. Private-use markers survive interpolation, letting the
+// parser split the localized result back into numeric fields.
+const DURATION_MARKERS: Readonly<Record<DurationField, string>> = {
+  hours: '\uE001',
+  minutes: '\uE002',
+  seconds: '\uE003',
+}
+
 /**
  * The host's screen-reader announcement beside one process button.
  *
@@ -151,24 +160,20 @@ function escapeRegExp(value: string): string {
  */
 function durationMilliseconds(value: string, t: ChatTranslate): number | null {
   for (const format of DURATION_FORMATS) {
-    const template = t(format.key, {
-      hours: '\uE001',
-      minutes: '\uE002',
-      seconds: '\uE003',
-    })
+    const template = t(format.key, DURATION_MARKERS)
     let source = '^'
     let cursor = 0
     let valid = true
     for (const field of format.fields) {
-      const placeholder = `{${field}}`
-      const at = template.indexOf(placeholder, cursor)
-      if (at < 0) {
+      const marker = DURATION_MARKERS[field]
+      const at = template.indexOf(marker, cursor)
+      if (at < 0 || template.indexOf(marker, at + marker.length) >= 0) {
         valid = false
         break
       }
       source += escapeRegExp(template.slice(cursor, at))
       source += '(\\d+)'
-      cursor = at + placeholder.length
+      cursor = at + marker.length
     }
     if (!valid) continue
     source += escapeRegExp(template.slice(cursor)) + '$'
@@ -252,13 +257,10 @@ function liveDuration(label: string, t: ChatTranslate): LiveDuration | null {
 }
 
 /** The one open process control in the mounted chat, if there is one. */
-function findRunningControl(
-  t: ChatTranslate,
-  buttons: ReadonlySet<HTMLButtonElement>,
-): RunningControl | null {
+function findRunningControl(t: ChatTranslate): RunningControl | null {
   const settled = settledAnnouncements(t)
   let active: RunningControl | null = null
-  for (const button of buttons) {
+  for (const button of document.querySelectorAll<HTMLButtonElement>(PROCESS_BUTTON)) {
     if (!button.isConnected) continue
     const announcement = processAnnouncement(button)
     const flow = button.closest<HTMLElement>(CHAT_FLOW)
@@ -337,12 +339,6 @@ function containsOwnStatus(node: Node): boolean {
     && (node.classList.contains(STATUS_CLASS) || node.querySelector(`.${STATUS_CLASS}`) !== null)
 }
 
-/** Whether this childList record changes the set of process buttons. */
-function changesProcessButtons(record: MutationRecord): boolean {
-  return record.type === 'childList'
-    && [...record.addedNodes, ...record.removedNodes].some(containsProcessButton)
-}
-
 /**
  * Whether a mutation can change which process control is open, its label, or
  * the identity of the chat flow. Ordinary tool-row streaming is intentionally
@@ -416,18 +412,15 @@ export function setupRunningStatus(ctx: ClientContext): () => void {
 
   const t = ctx.locale.bind('chat')
   const removeStyles = injectRunningStatusStyles()
-  const buttons = new Set<HTMLButtonElement>()
-  const refreshButtons = (): void => {
-    buttons.clear()
-    for (const button of document.querySelectorAll<HTMLButtonElement>(PROCESS_BUTTON)) buttons.add(button)
-  }
   let mounted: { readonly root: HTMLElement, readonly flow: HTMLElement } | undefined
   let disposed = false
-  let structureDirty = false
 
   const sync = (): void => {
     if (disposed) return
-    const control = findRunningControl(t, buttons)
+    // Query the live DOM instead of maintaining a structural cache. React can
+    // mount or replace the active process control before this tweak's observer
+    // starts, and a cached button set then never discovers the current control.
+    const control = findRunningControl(t)
     if (control === null) {
       mounted?.root.remove()
       mounted = undefined
@@ -453,17 +446,11 @@ export function setupRunningStatus(ctx: ClientContext): () => void {
 
   let scheduled = false
   const observer = new MutationObserver((records) => {
-    const structural = records.some(changesProcessButtons)
-    if (structural) structureDirty = true
-    if ((!structural && !records.some(touchesRunningControl)) || scheduled) return
+    if (!records.some(touchesRunningControl) || scheduled) return
     scheduled = true
     queueMicrotask(() => {
       scheduled = false
       if (disposed) return
-      if (structureDirty) {
-        refreshButtons()
-        structureDirty = false
-      }
       sync()
     })
   })
@@ -475,8 +462,7 @@ export function setupRunningStatus(ctx: ClientContext): () => void {
     attributeFilter: [...OBSERVED_ATTRIBUTES],
   })
 
-  // Covers a toggle click or bundle reload while a turn is already open.
-  refreshButtons()
+  // Covers setup while a turn is already open, including a bundle reload.
   sync()
 
   const cleanup = (): void => {
@@ -485,8 +471,6 @@ export function setupRunningStatus(ctx: ClientContext): () => void {
     observer.disconnect()
     mounted?.root.remove()
     mounted = undefined
-    buttons.clear()
-    structureDirty = false
     removeStyles()
     // A late cleanup from an older bundle must not clear the new owner's
     // duplicate-setup guard.
