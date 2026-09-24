@@ -41,6 +41,8 @@ export interface ResolvedStyleTweaksConfig {
   turnTimePill: boolean
   /** Whether the folded process group's header carries the 0.1.6 counts again. */
   turnProcessCounts: boolean
+  /** Whether the blue running-status line is restored at the live tail. */
+  runningStatus: boolean
   /** Whether the five readout stat dialogs use 0.1.6's opaque fill. */
   opaqueStatDialogs: boolean
   /** Whether the context capsule's hover tooltip is suppressed. */

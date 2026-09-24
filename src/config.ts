@@ -251,6 +251,18 @@ export interface StyleTweaksConfig {
    */
   turnProcessCounts?: boolean
   /**
+   * Restore DSH 0.1.6's dedicated blue running-status line at the live tail,
+   * immediately above the composer. The 0.1.7 grouped-work-details refactor
+   * removed `ChatView`'s separate `TurnStatus` and merged the running wording
+   * into the process-group header at the beginning of the always-open process
+   * group, so the status moves away from the composer as tool rows accumulate.
+   * On: a namespaced, visual-only clone of the host's current running label and
+   * elapsed clock is appended to the chat flow while a turn is open. The host
+   * keeps its process header and accessibility announcement. Hosts through
+   * 0.1.6 already render their own status and leave this tweak inert.
+   */
+  runningStatus?: boolean
+  /**
    * Keep the stat dialogs opaque, as they were through 0.1.6: 0.1.7-alpha.1
    * redefined the elevated menu/card material (`--dsw-specific-menu` went from
    * the opaque `--dsw-alias-bg-layer-3` to a translucent fill, paired with a
@@ -376,6 +388,11 @@ export const DEFAULT_TURN_TIME_PILL = false
  */
 export const DEFAULT_TURN_PROCESS_COUNTS = false
 /**
+ * Default: on — 0.1.7's process-group header moved the running label away from
+ * the composer; restore the blue live-tail status that shipped through 0.1.6.
+ */
+export const DEFAULT_RUNNING_STATUS = true
+/**
  * Default: off — the translucent frosted material is 0.1.7-alpha.1's shipped
  * look; restoring 0.1.6's opaque fill on the stat dialogs is opt-in.
  */
@@ -450,6 +467,7 @@ const FIELDS = {
   pillsCacheHitDecimals: z.boolean().default(DEFAULT_PILLS_CACHE_HIT_DECIMALS),
   turnTimePill: z.boolean().default(DEFAULT_TURN_TIME_PILL),
   turnProcessCounts: z.boolean().default(DEFAULT_TURN_PROCESS_COUNTS),
+  runningStatus: z.boolean().default(DEFAULT_RUNNING_STATUS),
   opaqueStatDialogs: z.boolean().default(DEFAULT_OPAQUE_STAT_DIALOGS),
   contextPillNoTooltip: z.boolean().default(DEFAULT_CONTEXT_PILL_NO_TOOLTIP),
   legacyContextMeter: z.boolean().default(DEFAULT_LEGACY_CONTEXT_METER),
@@ -519,6 +537,8 @@ export interface ResolvedStyleTweaksConfig {
   turnTimePill: boolean
   /** Whether the folded process group's header carries the 0.1.6 counts again. */
   turnProcessCounts: boolean
+  /** Whether the blue running-status line is restored at the live tail. */
+  runningStatus: boolean
   /** Whether the five readout stat dialogs use 0.1.6's opaque fill. */
   opaqueStatDialogs: boolean
   /** Whether the context capsule's hover tooltip is suppressed. */
@@ -559,6 +579,7 @@ export function resolveConfig(config: StyleTweaksConfig = {}): ResolvedStyleTwea
     pillsCacheHitDecimals: config.pillsCacheHitDecimals ?? DEFAULT_PILLS_CACHE_HIT_DECIMALS,
     turnTimePill: config.turnTimePill ?? DEFAULT_TURN_TIME_PILL,
     turnProcessCounts: config.turnProcessCounts ?? DEFAULT_TURN_PROCESS_COUNTS,
+    runningStatus: config.runningStatus ?? DEFAULT_RUNNING_STATUS,
     opaqueStatDialogs: config.opaqueStatDialogs ?? DEFAULT_OPAQUE_STAT_DIALOGS,
     contextPillNoTooltip: config.contextPillNoTooltip ?? DEFAULT_CONTEXT_PILL_NO_TOOLTIP,
     legacyContextMeter: config.legacyContextMeter ?? DEFAULT_LEGACY_CONTEXT_METER,

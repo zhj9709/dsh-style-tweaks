@@ -53,6 +53,7 @@ import { setupLegacyStatsLine } from './tweaks/legacy-stats-line.tsx'
 import { setupPillsCacheHitDecimals } from './tweaks/pills-cache-hit-decimals.tsx'
 import { setupTurnTimePill } from './tweaks/turn-time-pill.tsx'
 import { setupTurnProcessCounts } from './tweaks/turn-process-counts.ts'
+import { setupRunningStatus } from './tweaks/running-status.ts'
 import { injectContextPillNoTooltipStyles } from './tweaks/context-pill-no-tooltip.ts'
 import { setupLegacyContextMeter } from './tweaks/legacy-context-meter.tsx'
 import { closedWorkspaceEntries, restoreClosedWorkspace, setupWorkspaceClose } from './tweaks/workspace-close.ts'
@@ -87,6 +88,7 @@ const TWEAK_INJECTORS: Record<string, (ctx: ClientContext, resolved: ResolvedTwe
   'pills-cache-hit-decimals': setupPillsCacheHitDecimals,
   'turn-time-pill': setupTurnTimePill,
   'turn-process-counts': setupTurnProcessCounts,
+  'running-status': setupRunningStatus,
   'context-pill-no-tooltip': () => injectContextPillNoTooltipStyles(),
   'legacy-context-meter': setupLegacyContextMeter,
   'workspace-close': (ctx, resolved, settings) => setupWorkspaceClose(ctx, resolved, settings),
@@ -195,6 +197,8 @@ const en = {
   'tweak.turnTimePill.ttft': 'Time to first token (TTFT)',
   'tweak.turnProcessCounts.title': 'Call counts on process groups',
   'tweak.turnProcessCounts.description': 'Through 0.1.6 the header of a folded process group was a tally: tool calls and messages, plus subagents when the turn spawned any. 0.1.7-alpha.1 replaced it with the elapsed time. This puts the 0.1.6 tally back after the time, so both halves show at once — the counts grow while the turn runs, and the failed / stopped / running headers read the same way. A turn with nothing to count is left as shipped.',
+  'tweak.runningStatus.title': 'Blue running status at the tail',
+  'tweak.runningStatus.description': '0.1.7 removed the dedicated blue "Deep diving" line above the composer and merged the running label into the process-group header, so growing tool output pushes it away. This restores the 0.1.6 live-tail presentation with the current localized label and elapsed clock. The host keeps its process header and accessibility announcement; pre-0.1.7 hosts already have the line and stay unchanged.',
   'tweak.opaqueStatDialogs.title': 'Opaque stat dialogs',
   'tweak.opaqueStatDialogs.description': '0.1.7-alpha.1 swapped the card material for a translucent, frosted one. This switches only the click-open stat dialogs back to 0.1.6\'s opaque fill — the composer\'s session-statistics and token-usage cards, the turn-tail usage and time pills, and the context-occupancy panel (five in all). Every other menu and panel (session and workspace "..." menus, the model selector, the composer\'s / and @ menus, the todo / queue / dock panels) keeps the shipped material.',
   'tweak.contextPillNoTooltip.title': 'No context meter hover info',
@@ -317,6 +321,8 @@ const zh: Record<LocaleKey, string> = {
   'tweak.turnTimePill.ttft': '首 token 用时（TTFT）',
   'tweak.turnProcessCounts.title': '过程组显示调用次数',
   'tweak.turnProcessCounts.description': '0.1.6 及之前，折叠过程组的标题是一行计数：工具调用次数与消息条数，轮次起了子代理时还带 subagent 数；0.1.7-alpha.1 把它换成了用时。开启本项把 0.1.6 的计数接在用时后面，两半同时显示，计数随轮次进行实时增长，失败 / 停止 / 生成中的标题同样适用；没有可计数内容的轮次保持原样。',
+  'tweak.runningStatus.title': '输入框上方恢复蓝色运行状态',
+  'tweak.runningStatus.description': '0.1.7 去掉了输入框上方独立的蓝色「深度求索中」状态行，把运行文案并到过程组标题；工具调用越多，标题离输入框越远。开启本项恢复 0.1.6 的尾部展示：沿用当前语言的运行文案和实时用时。宿主的过程组标题与无障碍播报保持不变；0.1.7 之前的宿主本就有这行，不会重复添加。',
   'tweak.opaqueStatDialogs.title': '统计弹窗不透明',
   'tweak.opaqueStatDialogs.description': '0.1.7-alpha.1 把卡片材质换成了半透明 + 背景模糊。开启本项只把点开的统计弹窗换回 0.1.6 的不透明背景——输入框下方的会话统计与 token 用量（官方的「统计交互卡片」）、行尾的每轮用量与用时、以及上下文占用按钮点开的面板，共五张。其他菜单与面板（会话 / 工作区「…」菜单、模型选择、输入框的 / 与 @ 菜单、任务 / 队列 / dock 面板）保持 0.1.7 原样。',
   'tweak.contextPillNoTooltip.title': '上下文占用按钮不显示悬停信息',
@@ -1360,9 +1366,23 @@ export function apply(ctx: ClientContext): void {
   // the first paint.)
   ctx.effect(() => {
     const cleanups: Array<() => void> = []
+    /** Prevent a queued settings callback from remounting after teardown. */
+    let disposed = false
+    /** Dispose every mount even when one cleanup happens to throw. */
+    const disposeMounts = (): void => {
+      while (cleanups.length > 0) {
+        const cleanup = cleanups.pop()
+        try {
+          cleanup?.()
+        } catch (error) {
+          console.error('[dsh-style-tweaks] tweak cleanup failed', error)
+        }
+      }
+    }
     /** The resolved input the live mounts were built from. */
     let mounted: ResolvedTweaks | undefined
     const sync = (): void => {
+      if (disposed) return
       const value = controller.getSnapshot().value
       const resolved = resolveValue(value)
       // History page size: a transport feature, so it is handled BEFORE the
@@ -1397,7 +1417,7 @@ export function apply(ctx: ClientContext): void {
       // Full remount: simplest, and the per-tweak mounts are cheap and few
       // enough that tearing them all down on every settings change stays
       // imperceptible.
-      while (cleanups.length > 0) cleanups.pop()!()
+      disposeMounts()
       for (const tweak of TWEAKS) {
         const enabled = (resolved as unknown as Record<string, boolean>)[tweak.settingKey] ?? tweak.defaultEnabled
         if (!enabled) continue
@@ -1417,13 +1437,15 @@ export function apply(ctx: ClientContext): void {
     sync()
     const unsubscribe = controller.subscribe(sync)
     // Plugin teardown (disable, or a bundle reload in the same page): the
-    // wrappers stay installed for the page lifetime by design, but this
-    // instance releases the targets so it stops rewriting. The release is
-    // ownership-checked on the shared state, so a teardown that lands after
-    // the next instance has already taken over is a no-op rather than a wipe
-    // of the new instance's settings.
+    // history transport wrappers stay installed for the page lifetime by
+    // design, but every tweak mount owned by this effect must be released.
+    // The history-target release is ownership-checked on shared state, so a
+    // teardown that lands after the next instance took over cannot wipe it.
     return () => {
+      if (disposed) return
+      disposed = true
       unsubscribe()
+      disposeMounts()
       resetHistoryPageSizeTargets()
     }
   }, 'dsh-style-tweaks: live tweak styles')

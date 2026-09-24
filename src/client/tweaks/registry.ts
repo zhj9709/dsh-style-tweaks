@@ -125,6 +125,17 @@ export const TWEAKS: readonly TweakDescriptor[] = [
     descriptionKey: 'tweak.turnProcessCounts.description',
   },
   {
+    id: 'running-status',
+    settingKey: 'runningStatus',
+    // On: 0.1.7 removed the dedicated blue tail and moved the running label
+    // into the process-group header, where growing work pushes it away from
+    // the composer. Restoring the shipped-through-0.1.6 presentation is the
+    // default; older hosts already have it and the tweak stays inert there.
+    defaultEnabled: true,
+    titleKey: 'tweak.runningStatus.title',
+    descriptionKey: 'tweak.runningStatus.description',
+  },
+  {
     id: 'opaque-stat-dialogs',
     settingKey: 'opaqueStatDialogs',
     // Off: the translucent frosted material is 0.1.7-alpha.1's shipped look;
