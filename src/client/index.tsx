@@ -23,7 +23,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { installConversationWidthStyles } from './conversation-width.ts'
 import { setupSettingsNavIcon } from './settings-nav-icon.ts'
+import { setupDesktopSettingsLauncher } from './tweaks/desktop-settings-launcher.ts'
 import {
+  DEFAULT_DESKTOP_SETTINGS_LAUNCHER,
   DEFAULT_USE_PLUGIN_WIDTH,
   MAX_DIALOG_WIDTH,
   MAX_HISTORY_PAGE_SIZE,
@@ -65,6 +67,10 @@ import {
 
 const NS = 'style-tweaks'
 const SETTINGS_ROUTE = '/_dsh/style-tweaks/settings'
+
+function isDesktopRuntime(): boolean {
+  return typeof globalThis !== 'undefined' && 'dshDesktop' in globalThis
+}
 
 /**
  * Maps a tweak id to its mount function. Add new tweaks here. Pure-CSS
@@ -134,10 +140,15 @@ class SettingsApiError extends Error {
 
 const en = {
   nav: 'Style tweaks',
+  desktopSettingsLabel: 'Settings',
+  desktopSettingsHint: 'Open settings',
   settingsTitle: 'Style tweaks',
   settingsIntro: 'Opt-in style tweaks for DSH: precise conversation column-width control (with presets and side margin), and a set of small fixes for the sidebar and the settings panel. Each toggle applies immediately and persists to your settings document.',
   sectionLayout: 'Layout',
+  sectionDesktop: 'Desktop',
   sectionTweaks: 'Tweaks',
+  desktopSettingsLauncher: 'External Settings launcher',
+  desktopSettingsLauncherHint: 'Show a Settings gear beside More in the Desktop sidebar. When off, More → Settings remains the only entry. This option is only shown in Desktop.',
   dialogWidth: 'Dialog width',
   dialogWidthHint: 'Number between 600 and 1600 px; 748 is DSH\'s default column width, larger values widen it.',
   presetDefault: 'Default',
@@ -258,10 +269,15 @@ type LocaleKey = keyof typeof en
 
 const zh: Record<LocaleKey, string> = {
   nav: '样式调整',
+  desktopSettingsLabel: '设置',
+  desktopSettingsHint: '打开设置',
   settingsTitle: '样式调整',
   settingsIntro: 'DSH 界面的可选样式调整：对话列宽精确控制（含预设与两侧边距），以及侧边栏与设置面板的一组小幅修复。每个开关立即生效并持久化到设置文档。',
   sectionLayout: '布局',
+  sectionDesktop: '桌面端',
   sectionTweaks: '调整项',
+  desktopSettingsLauncher: '外置设置入口',
+  desktopSettingsLauncherHint: '在 Desktop 侧栏的“更多”右侧显示设置齿轮。关闭时只保留“更多 → 设置”原生入口；此项仅在 Desktop 显示。',
   dialogWidth: '对话框宽度',
   dialogWidthHint: '取值 600–1600 px；748 为 DSH 默认列宽，数字越大越宽。',
   presetDefault: '默认',
@@ -1172,6 +1188,23 @@ function SettingsSection({ controller, t }: SettingsSectionProps) {
         ) : null}
       </section>
 
+      {isDesktopRuntime() ? (
+        <section className="cst-panel">
+          <div className="cst-section-label">{t('sectionDesktop')}</div>
+          <div className="cst-field">
+            <div className="cst-field-top">
+              <span className="cst-label">{t('desktopSettingsLauncher')}<Hint text={t('desktopSettingsLauncherHint')} /></span>
+              <div className="cst-controls">
+                <div className="cst-seg">
+                  <button type="button" className={resolved.desktopSettingsLauncher ? 'cst-seg-active' : ''} disabled={!writable} onClick={() => { save('desktopSettingsLauncher', true) }}>{t('tweakOn')}</button>
+                  <button type="button" className={!resolved.desktopSettingsLauncher ? 'cst-seg-active' : ''} disabled={!writable} onClick={() => { save('desktopSettingsLauncher', false) }}>{t('tweakOff')}</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       <section className="cst-panel">
         <div className="cst-section-label">{t('sectionHistory')}</div>
         <div className="cst-field">
@@ -1333,8 +1366,36 @@ export function apply(ctx: ClientContext): void {
     () => setupSettingsNavIcon(() => t('nav')),
     'dsh-style-tweaks: settings nav icon',
   )
-
   const controller = new SettingsClient()
+
+  // The Desktop launcher is opt-in. Keep it out of the DOM until the settings
+  // snapshot has resolved true, and tear it down immediately when the user
+  // turns it back off so the host's native More → Settings path is restored.
+  ctx.effect(() => {
+    let cleanup: (() => void) | undefined
+    const sync = (): void => {
+      const value = controller.getSnapshot().value
+      const enabled = isDesktopRuntime()
+        && (value === undefined
+          ? DEFAULT_DESKTOP_SETTINGS_LAUNCHER
+          : resolveValue(value).desktopSettingsLauncher)
+      if (enabled && cleanup === undefined) {
+        cleanup = setupDesktopSettingsLauncher(
+          () => t('desktopSettingsLabel'),
+          () => t('desktopSettingsHint'),
+        )
+      } else if (!enabled && cleanup !== undefined) {
+        cleanup()
+        cleanup = undefined
+      }
+    }
+    sync()
+    const unsubscribe = controller.subscribe(sync)
+    return () => {
+      unsubscribe()
+      cleanup?.()
+    }
+  }, 'dsh-style-tweaks: desktop settings launcher')
 
   // Width-axis override: when plugin-width is on, install the handle-hiding
   // + user-width-clamp CSS once and keep the same controller alive; on

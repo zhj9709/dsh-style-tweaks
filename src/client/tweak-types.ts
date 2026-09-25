@@ -51,6 +51,8 @@ export interface ResolvedStyleTweaksConfig {
   legacyContextMeter: boolean
   /** Whether the user can close (hide) Workspaces without deleting them. */
   workspaceClose: boolean
+  /** Whether the Desktop-only external Settings launcher is enabled. */
+  desktopSettingsLauncher: boolean
   /** Ids of the Workspaces currently closed (hidden but fully retained). */
   closedWorkspaces: readonly string[]
   /** Whether the right Sidebar's first-open width is owned by the plugin. */

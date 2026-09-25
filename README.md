@@ -15,6 +15,8 @@
 - **两侧边距**：插件宽度控制开启时，对话区域两侧保留的空白（px），列宽被钳制为对话框宽度，侧边栏打开或窗口缩小时内容会收窄，不会贴住边缘。最低 32 px。仅在"插件宽度控制"开启时显示；关闭后边距不生效，保持 DSH 原生行为。
 - **右侧边栏初始宽度（默认关闭，45%）**：开启后接管右侧边栏首次打开时的宽度——仅在本次页面加载后的第一次打开时按"会话窗口宽度 × 百分比"写入一次（15–70 可选，含 30 / 40 / 45 / 55 四个预设）。之后手动拖拽、关闭再打开都保留你自己拖出的宽度；刷新页面后该百分比重新生效。默认关闭时保持 DSH 自身的 45%，插件完全不介入；开启后默认百分比同样取 45，因此不改数值时观感与原生一致。宿主自身还会把结果钳制到它的范围内（最小 300 px、最大窗口的 70%），换算结果不足 300 px 时按 300 px 显示。0.1.5 之前的宿主上本项保持惰性。
 
+- **Desktop 设置入口外置（默认关闭）**：仅在 Desktop 的“样式调整”设置页显示开关；开启后侧栏底部排列为 `[更多] [设置齿轮]`，点击齿轮复用宿主原有完整 Settings 窗口，“更多”里不再显示重复的“设置”，但反馈、登录、退出等账号操作保留。关闭时恢复原生“更多 → 设置”；Web 版不显示此设置和外置齿轮。该入口依赖当前 Desktop 的账号菜单 DOM 与 portal 菜单结构，宿主结构变化时会安全回退到原生入口。
+
 ### 调整项
 
 - **轮次导航常显（默认关闭）**：DSH 会在聊天列内容盒宽度降到 900 px 时隐藏右侧轮次导航栏（`TurnNavigator.module.css` 中针对聊天滚动区的容器查询）；把右侧边栏拉宽正是触发条件——中间列最多可被压到 400 px，因此右栏在其几乎整个可用区间里都看不到轮次导航。开启后任何聊天宽度下都保留轮次导航；窄宽度下导航停在滚动区右侧的空隙里，悬停预览会遮住部分正文。
@@ -46,6 +48,7 @@ style-tweaks:
   sideMargin: 50         # ≥ 32 px；仅 usePluginWidth 开启时显示/生效
   rightbarInitialWidth: false # 默认 false；true 则由插件按下方百分比接管右栏首开宽度
   rightbarWidthPercent: 45   # 15–70；右侧边栏首次打开时占会话窗口宽度的百分比
+  desktopSettingsLauncher: false # 默认 false；仅 Desktop 设置页显示；true 时显示 [更多] [设置齿轮]
   # 历史加载
   historyPageSizeEnabled: false # 默认 false；true 则每次历史请求按下方条数携带（面板中的主开关）
   historyPageSize: 500          # 50–1000；仅 historyPageSizeEnabled 开启时显示/生效
@@ -282,6 +285,7 @@ dsh plugin --profile web add ./dsh-style-tweaks-0.1.4.tgz
 
 - **服务端**（`src/index.ts` / `src/store.ts`）：声明 `style-tweaks` 设置命名空间，并挂载同源路由 `/_dsh/style-tweaks/settings`。DSH 0.1.7 起命名空间就是本插件 entry 自己的 Config（entry id 即命名空间，字段带 `.volatile()` 标记），但**取值读写走插件自有存储 `<profile>/.dsh-style-tweaks/store.json`**——路由每请求现读现写 + revision CAS，绕开宿主 settings 全管线（该管线一次写实测 905–1114ms，自有存储 ~10ms；见 `.docs/PLAN-DIAGNOSIS-index.md`），store 缺失时首次请求从 entry Config 的显式字段播种一次；更早的宿主走 `ctx.settings.register` + 原 settings 路径，命名空间仍是同一个。
 - **浏览器端**（`src/client/index.tsx`）：读写该路由、渲染设置页，并根据每个开关的状态实时挂载 / 卸载对应的调整项（纯 CSS 调整项注入运行时 `<style>` 元素；JS 级调整项还会读写应用自身的状态 store 并修补 DOM）。
+- **Desktop 设置入口**（`src/client/tweaks/desktop-settings-launcher.ts`）：仅在 Desktop renderer 中、且 `desktopSettingsLauncher` 开关开启时观察侧栏账号菜单，把设置齿轮插入“更多”所在的 trigger row 右侧，形成 `[更多] [设置齿轮]`。点击齿轮通过一次性的 portal 菜单 DOM 桥接激活宿主原生 Settings 动作，复用完整设置窗口；“更多”中的原生设置项被隐藏，反馈、登录、退出等操作保留。开关默认关闭，关闭时恢复原生“更多 → 设置”；Web renderer 不显示该开关也不挂载入口。实现依赖账号菜单的语义角色、菜单定位和 CSS Modules 局部类名片段，结构失配时回退到原生菜单。
 - **列宽样式引擎**（`src/client/conversation-width.ts`）：写入 `--dsh-chat-user-width` CSS 变量，并在插件接管列宽时隐藏原生 `[data-width-handle]` 拖拽手柄；宽度值同时镜像到原生手柄读取的 localStorage 槽位，开关切换时无缝往返。
 - **调整项注册表**（`src/client/tweaks/registry.ts`）：每个调整项的元数据（id、settings 字段名、默认值、i18n 键）集中登记；新增调整项只需在注册表里加一条，并在 `src/client/tweaks/` 下新增一个注入文件。
 - **项目目录运行指示**（`src/client/tweaks/project-running-indicator.ts`）：从 `ctx.get('sessions')` / `ctx.get('workspaces')` 读取会话运行状态与目录归属，用 MutationObserver 在侧边栏的两类行上挂载应用自身的 `StateDot`（复用 `@deepseek-ai/dsh-client-ui-primitives` 的同一份模块挂载，但 ongoing 这个状态的外观被本项整体改掉了。宿主自己的 ongoing 是一个"呼吸弧线圆环"，而且 0.1.7 起在 `prefers-reduced-motion: reduce` 下会被直接冻成静止圆环——系统开了这一项时**所有**运行动画圆点，对话标题自己的点也在内，全都停住。静止的圆环说不出"有活在跑"，所以本项把全应用的 ongoing 圆点都重画成 ZCode 那种 spinner：lucide 的 `loader` 图标，24 视口里半径 6→10、约 2 单位粗、圆头，8 根等长等粗、**没有**透明度渐变，按 `animate-spin` 的 1 秒一圈匀速转，与系统设置无关。CSS 只能碰到宿主的 `svg` / `g` / 两个 `circle`，所以短棒是把 lucide 那份 `loader` 的路径数据原样做成一个 `data:` URI 的 SVG 遮罩，贴在 `svg` 元素上（`mask-size: 100% 100%`，任何尺寸的 StateDot 都成立），`svg` 自己填 `currentColor`，因此颜色仍由宿主的 CSS Modules 决定（tertiary 灰）；宿主在 `svg` 里画的东西整个关掉（`> *`，不是只点名今天这两个 `circle`，宿主哪天换成别的元素也照样盖住）。用遮罩而不是用 `conic-gradient` 画扇形，是因为渐变画出来的楔形会随角度出现抗锯齿差异、看起来深浅不一，而 SVG 描边（圆头）的光栅化与 ZCode 自己渲染这个图标时完全一致。作用范围只到这个圆点组件——宿主其它按"减少动态效果"关掉的动效（工具行扫光、文字 shimmer、进度条等）不受影响）：项目目录头行（`role="treeitem"[aria-expanded]`）右侧，以及会话行（`role="treeitem"` + CSS Modules 局部名 `sessionRow`）原本空着的状态槽里。"忙"的判定合并三个来源：会话自己的 `SessionSummary.running`（正在跑一轮）；会话名下的后台任务——`sessions` store 快照里由 Session Controller 控制流镜像出来的 `jobsBySession`，状态为 `running` / `stopping` 即算（与 DSH 原生会话头部"后台任务"入口 `ui-jobs` 的 `isLive` 同一判据，`run_in_background` 的命令因此从启动亮到结束，不会因为发起它的那一轮已经答完而熄灭）；以及血缘上有子代理在跑（与 `indexSubagentDescendants` 同一条上行遍历）。目录头行按工作区 id 匹配（从 `ProjectRowItem` 的 `props.group.key` 读，与 `GroupNode.key` 一致），不按标题文本——`GroupNode.label` 是目录 basename，两个不同父目录下的同名目录会得到同一个标题（DSH 只拦重名的*重命名*，不拦目录本身重名），按标题匹配会让两个同名目录同时亮，这正是"两个 pi-web 目录都出现运行指示"的原因；会话行只在它那一格**空着**时补点——原生已经渲染了自己的圆点（对话进行中、子代理在跑、等待审批/回答、完成未读）就让位，避免两个点并排。会话行没有可用的插件槽位，DOM 上也不带 session id，因此 id 从 React fiber 链上读（`SessionNodeItem` 的 `props.node.id`）：读取全程防御式，读不到就不处理该行，且每一轮都重新解析，因为侧栏的行会被回收复用。宿主没有 `jobs` 服务时 `jobsBySession` 缺失或为空，自动退回只看原生覆盖的两种情况。

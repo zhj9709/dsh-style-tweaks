@@ -64,6 +64,8 @@ export const DEFAULT_CONTEXT_PILL_NO_TOOLTIP = false
 export const DEFAULT_LEGACY_CONTEXT_METER = false
 /** Default state of the workspace-close tweak (off: the stock Workspace list stays complete). */
 export const DEFAULT_WORKSPACE_CLOSE = false
+/** Default state of the Desktop-only external Settings launcher (off). */
+export const DEFAULT_DESKTOP_SETTINGS_LAUNCHER = false
 /** No Workspace is closed until the user closes one. */
 export const DEFAULT_CLOSED_WORKSPACES: readonly string[] = []
 /** Default state of the right-Sidebar initial-width tweak (off: the host keeps its own 45%). */
@@ -169,6 +171,7 @@ export function resolveClientConfig(
     contextPillNoTooltip: value?.contextPillNoTooltip ?? DEFAULT_CONTEXT_PILL_NO_TOOLTIP,
     legacyContextMeter: value?.legacyContextMeter ?? DEFAULT_LEGACY_CONTEXT_METER,
     workspaceClose: value?.workspaceClose ?? DEFAULT_WORKSPACE_CLOSE,
+    desktopSettingsLauncher: value?.desktopSettingsLauncher ?? DEFAULT_DESKTOP_SETTINGS_LAUNCHER,
     closedWorkspaces: resolveClosedWorkspaces(value?.closedWorkspaces),
     rightbarInitialWidth: value?.rightbarInitialWidth ?? DEFAULT_RIGHTBAR_INITIAL_WIDTH,
     rightbarWidthPercent: resolveRightbarPercent(value?.rightbarWidthPercent),

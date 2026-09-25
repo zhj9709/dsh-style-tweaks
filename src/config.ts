@@ -294,6 +294,12 @@ export interface StyleTweaksConfig {
    */
   workspaceClose?: boolean
   /**
+   * Show the external Settings gear beside the Desktop account menu's More
+   * entry. The preference is shown only in the Desktop client and defaults
+   * off; when disabled the host's native More → Settings path remains.
+   */
+  desktopSettingsLauncher?: boolean
+  /**
    * Ids of the Workspaces currently closed. Internal data: the Settings
    * panel renders them as a recovery list, never as an ordinary toggle.
    * Ids whose Workspace no longer exists in the Host registry are pruned.
@@ -413,6 +419,11 @@ export const DEFAULT_LEGACY_CONTEXT_METER = false
  * so the stock list stays complete until the user opts in.
  */
 export const DEFAULT_WORKSPACE_CLOSE = false
+/**
+ * Default: off — the external Desktop Settings gear is opt-in, so the host's
+ * native More → Settings path remains the default.
+ */
+export const DEFAULT_DESKTOP_SETTINGS_LAUNCHER = false
 /** No Workspace is closed until the user closes one. */
 export const DEFAULT_CLOSED_WORKSPACES: readonly string[] = []
 /**
@@ -473,6 +484,7 @@ const FIELDS = {
   contextPillNoTooltip: z.boolean().default(DEFAULT_CONTEXT_PILL_NO_TOOLTIP),
   legacyContextMeter: z.boolean().default(DEFAULT_LEGACY_CONTEXT_METER),
   workspaceClose: z.boolean().default(DEFAULT_WORKSPACE_CLOSE),
+  desktopSettingsLauncher: z.boolean().default(DEFAULT_DESKTOP_SETTINGS_LAUNCHER),
   closedWorkspaces: z.array(z.string()).default([...DEFAULT_CLOSED_WORKSPACES]),
   rightbarInitialWidth: z.boolean().default(DEFAULT_RIGHTBAR_INITIAL_WIDTH),
   rightbarWidthPercent: z.number().min(MIN_RIGHTBAR_WIDTH_PERCENT).max(MAX_RIGHTBAR_WIDTH_PERCENT).default(DEFAULT_RIGHTBAR_WIDTH_PERCENT),
@@ -548,6 +560,8 @@ export interface ResolvedStyleTweaksConfig {
   legacyContextMeter: boolean
   /** Whether the user can close (hide) Workspaces without deleting them. */
   workspaceClose: boolean
+  /** Whether the Desktop-only external Settings launcher is enabled. */
+  desktopSettingsLauncher: boolean
   /** Ids of the Workspaces currently closed (hidden but fully retained). */
   closedWorkspaces: readonly string[]
   /** Whether the plugin owns the right Sidebar's first-open width. */
@@ -585,6 +599,7 @@ export function resolveConfig(config: StyleTweaksConfig = {}): ResolvedStyleTwea
     contextPillNoTooltip: config.contextPillNoTooltip ?? DEFAULT_CONTEXT_PILL_NO_TOOLTIP,
     legacyContextMeter: config.legacyContextMeter ?? DEFAULT_LEGACY_CONTEXT_METER,
     workspaceClose: config.workspaceClose ?? DEFAULT_WORKSPACE_CLOSE,
+    desktopSettingsLauncher: config.desktopSettingsLauncher ?? DEFAULT_DESKTOP_SETTINGS_LAUNCHER,
     closedWorkspaces: resolveClosedWorkspaces(config.closedWorkspaces),
     rightbarInitialWidth: config.rightbarInitialWidth ?? DEFAULT_RIGHTBAR_INITIAL_WIDTH,
     rightbarWidthPercent: resolveRightbarPercent(config.rightbarWidthPercent),
