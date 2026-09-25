@@ -2,7 +2,7 @@
 
 简体中文 | [English](README.en.md)
 
-> 依赖版本：deepseek-harness v0.1.5-rc.1
+> 依赖版本：deepseek-harness v0.1.7-rc.2
 
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）Web UI 插件：为 DSH 界面提供一套可选的样式调整——精确的对话列宽控制，以及侧边栏与设置面板的一系列小幅度修复。
 

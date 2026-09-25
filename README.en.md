@@ -2,7 +2,7 @@
 
 English | [简体中文](README.md)
 
-> Dependency version: deepseek-harness v0.1.5-rc.1
+> Dependency version: deepseek-harness v0.1.7-rc.2
 
 A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) web plugin that bundles a precise conversation column-width control with a collection of opt-in style tweaks for DSH's UI — including small fixes for the sidebar and the settings panel.
 
