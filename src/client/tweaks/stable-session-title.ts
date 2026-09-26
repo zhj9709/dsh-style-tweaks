@@ -50,6 +50,8 @@
  * declarations change nothing.
  */
 
+import { claimStyleNode, releaseStyleNode } from '../style-node.ts'
+
 const STABLE_SESSION_TITLE_CSS = `
 [role="treeitem"]:not([aria-expanded]) [class$="_title"] {
   overflow: clip !important;
@@ -73,5 +75,6 @@ export function injectStableSessionTitleStyles(): () => void {
     style.textContent = STABLE_SESSION_TITLE_CSS
     document.head.appendChild(style)
   }
-  return () => { style?.remove() }
+  const owner = claimStyleNode(style)
+  return () => { releaseStyleNode(style, owner) }
 }

@@ -58,6 +58,8 @@
  */
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import { touchesScope } from '../mutation-scope.ts'
+import { claimStyleNode, releaseStyleNode } from '../style-node.ts'
 
 /** App-side store shapes consumed via `ctx.get('sessions' | 'workspaces').list`. */
 interface SessionListShape {
@@ -291,7 +293,8 @@ export function injectLocateCurrentSessionStyles(): () => void {
     style.textContent = LOCATE_CSS
     document.head.appendChild(style)
   }
-  return () => { style?.remove() }
+  const owner = claimStyleNode(style)
+  return () => { releaseStyleNode(style, owner) }
 }
 
 /**
@@ -351,6 +354,21 @@ function readCurrentSessionTitle(): string | null {
 
 /** Stable hook for one session row (project header rows carry `aria-expanded`). */
 const SESSION_ROW_SELECTOR = '[role="treeitem"]:not([aria-expanded])'
+
+/**
+ * Everything the observer's callback reads, as one `touchesScope` selector
+ * list: the sidebar's rows (both kinds of `treeitem` — the `aria-selected`
+ * attribute that drives the button's enabled state lives on a session row, the
+ * `aria-expanded` that reveals one on a project row), the search slot the
+ * button is injected beside, the conversation header the session id is read
+ * from, and the injected button itself so that churn around it (the host
+ * rebuilding the slot) still re-syncs once it is mounted.
+ *
+ * The structural fragments here are the same anchors `anchorElement` resolves,
+ * so a DSH build that renames them breaks both together rather than silently
+ * freezing the gate.
+ */
+const OBSERVED_SCOPE = `[role="treeitem"],${SEARCH_BUTTON_SELECTOR},${BREADCRUMB_NAV_SELECTOR},button.cst-locate-btn`
 
 /**
  * Find the sidebar treeitem rendering the given session inside one group,
@@ -716,6 +734,13 @@ function attachTooltip(btn: HTMLButtonElement): void {
     cancel()
     timer = setTimeout(() => {
       timer = null
+      // Teardown can land inside this delay: a settings publish re-mounts the
+      // whole tweak, and the disposer runs `hideTooltip()` then detaches the
+      // button. A bubble appended after that would never be hidden again —
+      // the only thing that hides it is `mouseleave`, and a detached button
+      // never fires one — so it would sit on screen for the rest of the page
+      // load. The anchor's own connectivity is the cheapest identity check.
+      if (!btn.isConnected) return
       showTooltip(btn, buttonCopy().label)
     }, TOOLTIP_DELAY_MS)
   })
@@ -866,6 +891,9 @@ export function setupLocateCurrentSession(ctx: ClientContext): () => void {
     performLocate(sessionList, workspaceList)
   }
 
+  /** Buttons this instance wired; the disposer takes down only its own. */
+  const wired = new Set<HTMLButtonElement>()
+
   /**
    * Bind the click handler to a button exactly once, marked by
    * `data-cst-locate-wired`. The synchronous first mount and the observer's
@@ -877,6 +905,7 @@ export function setupLocateCurrentSession(ctx: ClientContext): () => void {
     if (btn === null || btn.dataset.cstLocateWired !== undefined) return
     btn.addEventListener('click', onClick)
     btn.dataset.cstLocateWired = '1'
+    wired.add(btn)
   }
 
   // Try once synchronously so the first paint already shows the button.
@@ -888,28 +917,44 @@ export function setupLocateCurrentSession(ctx: ClientContext): () => void {
   // microtask. We also listen for attribute changes so the enabled state
   // tracks the current `aria-selected` row as the user switches sessions
   // without DSH rebuilding the tree.
+  let disposed = false
   let scheduled = false
   const schedule = (): void => {
     if (scheduled) return
     scheduled = true
     queueMicrotask(() => {
       scheduled = false
+      // A microtask already queued when the disposer ran must not re-mount.
+      if (disposed) return
       // refresh=true re-syncs the existing button's enabled state on every
       // tick; mountButton falls back to a no-op mount when the button is
       // already there. The microtask coalesces the burst into one re-sync.
       wire(mountButton(true, sessionList))
     })
   }
-  const observer = new MutationObserver(schedule)
+  const observer = new MutationObserver((records) => {
+    // The gate names what this tweak actually reads: the sidebar rows (whose
+    // aria-selected drives the button's enabled state), the search slot it
+    // injects beside, the conversation header the session id comes from, and
+    // its own button once mounted. Without it the body-wide observer would
+    // re-run `mountButton` on every frame of a streaming answer.
+    if (!touchesScope(records, OBSERVED_SCOPE)) return
+    schedule()
+  })
   observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-selected', 'aria-expanded'] })
 
   return () => {
+    if (disposed) return
+    disposed = true
     observer.disconnect()
     hideTooltip()
     removeStyles()
-    for (const btn of document.querySelectorAll<HTMLButtonElement>('button.cst-locate-btn')) {
+    // Only the buttons this instance wired: a document-wide sweep over
+    // `button.cst-locate-btn` would delete a successor instance's button too.
+    for (const btn of wired) {
       btn.removeEventListener('click', onClick)
       btn.remove()
     }
+    wired.clear()
   }
 }

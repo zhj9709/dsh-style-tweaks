@@ -58,6 +58,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 // namespace key map this file reads through.
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import { claimStyleNode, releaseStyleNode } from '../style-node.ts'
 
 /** The host `chat` vocabulary, which still carries the whole tally group. */
 type ChatTranslate = TranslateNS<'chat'>
@@ -123,45 +124,64 @@ function tallyText(button: HTMLElement, t: ChatTranslate): string | null {
  * in place, or take it off once the turn has no counted work left to report.
  * @param button - One `data-turn-process` disclosure button.
  * @param t - Translate seat over the host `chat` vocabulary.
+ * @param owned - Tallies this instance appended, so the disposer can take down
+ *   exactly those and leave a successor instance's tallies alone.
  */
-function syncButton(button: HTMLElement, t: ChatTranslate): void {
+function syncButton(button: HTMLElement, t: ChatTranslate, owned: Set<HTMLElement>): void {
   const text = tallyText(button, t)
   // The host's own children are never touched: the tally is looked up as a
   // direct child, wherever React has since put the chevron around it.
   const existing = button.querySelector<HTMLElement>(`:scope > .${TALLY_CLASS}`)
   if (text === null) {
-    existing?.remove()
+    // Only a tally this instance owns is ours to remove. A document-wide
+    // `querySelectorAll('.cst-tp-counts')` sweep would delete a successor
+    // instance's tallies too (same reasoning as `style-node.ts`).
+    if (existing !== null && owned.has(existing)) {
+      existing.remove()
+      owned.delete(existing)
+    }
     return
   }
   if (existing !== null) {
+    // Adopt whatever is already there — a bundle reload can leave the previous
+    // instance's tally in place — so the disposer can take it down.
+    owned.add(existing)
     if (existing.textContent !== text) existing.textContent = text
     return
   }
   const tally = document.createElement('span')
   tally.className = TALLY_CLASS
   tally.textContent = text
+  owned.add(tally)
   button.appendChild(tally)
 }
 
 /**
  * The buttons one mutation batch can have changed: the target of a count
- * attribute (a tool call or message settled) and every button inside an added
- * subtree (a turn mounted, or React replaced its header). Removals need no
- * work — a tally goes with its button.
+ * attribute (a tool call or message settled), every button inside an added
+ * subtree (a turn mounted, or React replaced its header), and — the case that
+ * makes a tally vanish for good — the *target* of a childList record.
+ *
+ * That last one matters because a removal is not always a button going away.
+ * When the host re-renders a button that stays, the record's target is that
+ * live button and the removed node is the tally this tweak injected; scanning
+ * added nodes alone finds nothing to re-sync, and since the full sweep only
+ * runs at setup, the count bar would stay gone until some unrelated count
+ * attribute happened to change. Removals of whole buttons still need no work
+ * of their own — a button that left the document has nothing to re-sync.
  * @param records - The batch handed to the observer callback.
  * @returns Buttons to re-sync, deduplicated.
  */
 function touchedButtons(records: readonly MutationRecord[]): Set<HTMLElement> {
   const touched = new Set<HTMLElement>()
   for (const record of records) {
-    if (record.type === 'attributes') {
-      // The observer's filter names the three count attributes, so this is a
-      // button in practice; the test keeps a stray carrier out of the sweep.
-      if (record.target instanceof HTMLElement && record.target.matches(PROCESS_BUTTON)) {
-        touched.add(record.target)
-      }
-      continue
+    // The observer's attribute filter names the three count attributes, so an
+    // attributes record's target is a button in practice; the test keeps a
+    // stray carrier out of the sweep either way.
+    if (record.target instanceof HTMLElement && record.target.matches(PROCESS_BUTTON)) {
+      touched.add(record.target)
     }
+    if (record.type === 'attributes') continue
     for (const node of record.addedNodes) {
       if (!(node instanceof HTMLElement)) continue
       if (node.matches(PROCESS_BUTTON)) touched.add(node)
@@ -199,8 +219,18 @@ export function setupTurnProcessCounts(ctx: ClientContext): () => void {
   const t = ctx.locale.bind('chat')
   const removeStyles = injectTurnProcessCountsStyles()
 
+  let disposed = false
+  /**
+   * Tallies this instance appended, and therefore the only ones it may remove.
+   *
+   * The previous disposer swept the document for `.cst-tp-counts`, which is
+   * only correct while one instance is alive: it also deleted nodes a newer
+   * instance had just appended during the handover in `getGlobalCleanup()`.
+   */
+  const owned = new Set<HTMLElement>()
+
   const sync = (): void => {
-    for (const button of document.querySelectorAll<HTMLElement>(PROCESS_BUTTON)) syncButton(button, t)
+    for (const button of document.querySelectorAll<HTMLElement>(PROCESS_BUTTON)) syncButton(button, t, owned)
   }
 
   // Coalesce a burst of DOM mutations into one sweep per microtask: the
@@ -218,7 +248,10 @@ export function setupTurnProcessCounts(ctx: ClientContext): () => void {
       scheduled = false
       const settled = batch
       batch = []
-      for (const button of touchedButtons(settled)) syncButton(button, t)
+      // A microtask already queued when the disposer ran must not touch the
+      // DOM afterwards; draining `batch` first leaves nothing behind it.
+      if (disposed) return
+      for (const button of touchedButtons(settled)) syncButton(button, t, owned)
     })
   })
   observer.observe(document.body, {
@@ -235,11 +268,14 @@ export function setupTurnProcessCounts(ctx: ClientContext): () => void {
   sync()
 
   const cleanup = (): void => {
+    if (disposed) return
+    disposed = true
     observer.disconnect()
     batch = []
-    for (const tally of document.querySelectorAll(`.${TALLY_CLASS}`)) tally.remove()
+    for (const tally of owned) tally.remove()
+    owned.clear()
     removeStyles()
-    setGlobalCleanup(undefined)
+    if (getGlobalCleanup() === cleanup) setGlobalCleanup(undefined)
   }
   setGlobalCleanup(cleanup)
   return cleanup
@@ -272,5 +308,6 @@ function injectTurnProcessCountsStyles(): () => void {
     style.textContent = TURN_PROCESS_COUNTS_CSS
     document.head.appendChild(style)
   }
-  return () => { style?.remove() }
+  const owner = claimStyleNode(style)
+  return () => { releaseStyleNode(style, owner) }
 }

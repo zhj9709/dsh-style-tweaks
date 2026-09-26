@@ -157,6 +157,8 @@
  */
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import { touchesScope } from '../mutation-scope.ts'
+import { claimStyleNode, releaseStyleNode } from '../style-node.ts'
 
 /**
  * The dialog's left rail list. Exported because the rail is not this tweak's
@@ -164,6 +166,21 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
  * and the two must never drift apart.
  */
 export const NAV_LIST_SELECTOR = 'div[role="dialog"][aria-modal="true"] > nav > [class*="_navList"]'
+/**
+ * The same list, unanchored — for observer gates only, never for querying.
+ *
+ * `touchesScope` decides whether an added or removed node is relevant by asking
+ * whether that node *contains* the scope, and `querySelector` only walks
+ * descendants. So the anchored form above cannot see the dialog itself being
+ * mounted or unmounted: `div[role=dialog]` is the scope's own ancestor, never a
+ * descendant of itself. It works today only because the host renders `Modal`
+ * through a portal whose wrapper is what actually lands in `document.body` — a
+ * coincidence of that one component, not a property of the gate. A host that
+ * mounted the dialog in place would leave this tweak and `settings-nav-icon`
+ * silently inert, with nothing to say so. A false positive here costs one extra
+ * `scan()`; a false negative costs a dead scroll driver.
+ */
+export const NAV_LIST_WATCH_SELECTOR = '[class*="_navList"]'
 /** Class the scroll driver toggles to reveal the thumb. Lives on the list itself. */
 const SHOW_CLASS = 'cst-nav-scroll-show'
 /** Overlay-bar idle delay: fade out this long after the last scroll event. */
@@ -226,7 +243,8 @@ function installNavScrollStyles(): () => void {
     document.head.appendChild(style)
   }
   if (style.textContent !== SETTINGS_NAV_SCROLL_CSS) style.textContent = SETTINGS_NAV_SCROLL_CSS
-  return () => { style?.remove() }
+  const owner = claimStyleNode(style)
+  return () => { releaseStyleNode(style, owner) }
 }
 
 /**
@@ -305,6 +323,7 @@ export function setupSettingsNavScroll(_ctx: ClientContext): () => void {
     attach(found)
   }
 
+  let disposed = false
   let frame = 0
   const scheduleScan = (): void => {
     if (frame !== 0) return
@@ -314,16 +333,25 @@ export function setupSettingsNavScroll(_ctx: ClientContext): () => void {
     })
   }
 
-  const observer = new MutationObserver(scheduleScan)
+  const observer = new MutationObserver((records) => {
+    // The rail is the only thing `scan` reads, and this observer spans the
+    // whole body: without the gate a streaming answer would schedule a frame —
+    // and a document-wide query — for a mutation in the transcript.
+    if (touchesScope(records, NAV_LIST_WATCH_SELECTOR)) scheduleScan()
+  })
   observer.observe(document.body, { childList: true, subtree: true })
   scan()
 
   const cleanup = (): void => {
+    if (disposed) return
+    disposed = true
     observer.disconnect()
+    // Cancelled below, so no queued frame can outlive the disposer — this tweak
+    // needs no `disposed` test inside its callback.
     if (frame !== 0) window.cancelAnimationFrame(frame)
     detach()
     removeStyles()
-    setGlobalCleanup(undefined)
+    if (getGlobalCleanup() === cleanup) setGlobalCleanup(undefined)
   }
   setGlobalCleanup(cleanup)
   return cleanup

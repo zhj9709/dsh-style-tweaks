@@ -2,13 +2,20 @@
  * dsh-style-tweaks — client-side constants & resolvers.
  *
  * Mirror of the runtime values in `src/config.ts`. Duplicated because the
- * client tsconfig has `rootDir: src/client` (and explicitly excludes parent
- * dirs), so a runtime `import` from `../config` is a compile-time error.
- * Keep these in lock-step with `src/config.ts` — the server's schemastery
- * `Config` object is the source of truth for defaults / clamps.
+ * client tsconfig sets `rootDir: src/client`: importing the parent directory
+ * at all — a value import OR a type-only one — is rejected, so this file and
+ * the type mirror in `tweak-types.ts` both exist for that single reason.
+ * (Measured 2026-09-25: `import type { … } from '../config.ts'` fails TS6059
+ * "File is not under 'rootDir'" under the emitting config AND under the
+ * `--noEmit` config `pnpm typecheck` uses.)
  *
- * Types are still pulled from `src/config.ts` via `import type`, which the
- * rootDir restriction allows (no runtime reference is emitted).
+ * Keep the DEFAULTS in lock-step with `src/config.ts`'s `FIELDS` table: it is
+ * the source of truth for field names, types and defaults, and
+ * `scripts/check-mirrors.mjs` (wired into `pnpm typecheck`) fails when the two
+ * sets diverge. The normalisation below has NO server-side counterpart — it is
+ * the only place a stored value is made safe, since the store backend returns
+ * the persisted document exactly as written and every read goes through
+ * `resolveClientConfig`.
  */
 
 import type { ResolvedStyleTweaksConfig } from './tweak-types.ts'
@@ -92,8 +99,28 @@ export const MAX_HISTORY_PAGE_SIZE = 1000
 export const STEP_HISTORY_PAGE_SIZE = 50
 
 /**
+ * Normalize a boolean flag to a real boolean.
+ *
+ * `value?.flag ?? DEFAULT_FLAG` is not enough for the 22 on/off fields: it
+ * keeps any truthy value the store happened to hand over. Nothing on the read
+ * path type-checks a stored document — `readStore` only validates the
+ * document's shape (`isStoreDoc`: a `revision` plus a `values` object), and
+ * the panel's own writes are the sole reason a field is normally a boolean.
+ * So a store written by hand or by an older version can hold
+ * `"stableSessionTitle": "false"`, and the nullish coalescing keeps that
+ * string: `"false"` is truthy, and the tweak the user switched off comes back.
+ * Only `true` is on.
+ * @param value - Raw stored value, of unknown shape.
+ * @param fallback - The field's default, used for anything that is not a boolean.
+ * @returns The stored boolean, or the default.
+ */
+export function resolveFlag(value: boolean | undefined, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback
+}
+
+/**
  * Normalize a dialog width value (legacy strings included) to px.
- * Must match `resolveDialogWidth` in src/config.ts.
+ * The only definition — the server normalises nothing (see the header).
  */
 export function resolveDialogWidth(value: number | undefined): number {
   if (typeof value === 'number') {
@@ -104,7 +131,7 @@ export function resolveDialogWidth(value: number | undefined): number {
 
 /**
  * Normalize a side-margin value (legacy strings included) to px.
- * Must match `resolveSideMargin` in src/config.ts.
+ * The only definition — the server normalises nothing (see the header).
  */
 export function resolveSideMargin(value: number | undefined): number {
   if (typeof value === 'number') return Math.max(MIN_SIDE_MARGIN, Math.round(value))
@@ -113,7 +140,7 @@ export function resolveSideMargin(value: number | undefined): number {
 
 /**
  * Normalize a right-Sidebar width percentage.
- * Must match `resolveRightbarPercent` in src/config.ts.
+ * The only definition — the server normalises nothing (see the header).
  */
 export function resolveRightbarPercent(value: number | undefined): number {
   if (typeof value === 'number') {
@@ -124,7 +151,7 @@ export function resolveRightbarPercent(value: number | undefined): number {
 
 /**
  * Normalize the history page size to a whole number of messages.
- * Must match `resolveHistoryPageSize` in src/config.ts.
+ * The only definition — the server normalises nothing (see the header).
  */
 export function resolveHistoryPageSize(value: number | undefined): number {
   if (typeof value === 'number') {
@@ -135,7 +162,7 @@ export function resolveHistoryPageSize(value: number | undefined): number {
 
 /**
  * Normalize the closed-Workspace id list: keep non-empty strings only.
- * Must match `resolveClosedWorkspaces` in src/config.ts.
+ * The only definition — the server normalises nothing (see the header).
  */
 export function resolveClosedWorkspaces(value: readonly string[] | undefined): readonly string[] {
   if (!Array.isArray(value)) return DEFAULT_CLOSED_WORKSPACES
@@ -145,38 +172,38 @@ export function resolveClosedWorkspaces(value: readonly string[] | undefined): r
 
 /**
  * Build a fully-defaulted ResolvedStyleTweaksConfig from any
- * partial input. Mirror of `resolveConfig` in src/config.ts.
+ * partial input. The single runtime resolver for this plugin.
  */
 export function resolveClientConfig(
   value: Partial<ResolvedStyleTweaksConfig> | undefined,
 ): ResolvedStyleTweaksConfig {
   return {
     dialogWidth: resolveDialogWidth(value?.dialogWidth),
-    usePluginWidth: value?.usePluginWidth ?? DEFAULT_USE_PLUGIN_WIDTH,
+    usePluginWidth: resolveFlag(value?.usePluginWidth, DEFAULT_USE_PLUGIN_WIDTH),
     sideMargin: resolveSideMargin(value?.sideMargin),
-    stableSessionTitle: value?.stableSessionTitle ?? DEFAULT_STABLE_SESSION_TITLE,
-    hideSessionHoverActions: value?.hideSessionHoverActions ?? DEFAULT_HIDE_SESSION_HOVER_ACTIONS,
-    keepTurnRail: value?.keepTurnRail ?? DEFAULT_KEEP_TURN_RAIL,
-    codeBlockFlushTop: value?.codeBlockFlushTop ?? DEFAULT_CODE_BLOCK_FLUSH_TOP,
-    projectRunningIndicator: value?.projectRunningIndicator ?? DEFAULT_PROJECT_RUNNING_INDICATOR,
-    locateCurrentSession: value?.locateCurrentSession ?? DEFAULT_LOCATE_CURRENT_SESSION,
-    settingsNavScroll: value?.settingsNavScroll ?? DEFAULT_SETTINGS_NAV_SCROLL,
-    sidebarMiddleClickClose: value?.sidebarMiddleClickClose ?? DEFAULT_SIDEBAR_MIDDLE_CLICK_CLOSE,
-    legacyStatsLine: value?.legacyStatsLine ?? DEFAULT_LEGACY_STATS_LINE,
-    pillsCacheHitDecimals: value?.pillsCacheHitDecimals ?? DEFAULT_PILLS_CACHE_HIT_DECIMALS,
-    turnTimePill: value?.turnTimePill ?? DEFAULT_TURN_TIME_PILL,
-    turnProcessCounts: value?.turnProcessCounts ?? DEFAULT_TURN_PROCESS_COUNTS,
-    runningStatus: value?.runningStatus ?? DEFAULT_RUNNING_STATUS,
-    opaqueStatDialogs: value?.opaqueStatDialogs ?? DEFAULT_OPAQUE_STAT_DIALOGS,
-    contextPillNoTooltip: value?.contextPillNoTooltip ?? DEFAULT_CONTEXT_PILL_NO_TOOLTIP,
-    legacyContextMeter: value?.legacyContextMeter ?? DEFAULT_LEGACY_CONTEXT_METER,
-    workspaceClose: value?.workspaceClose ?? DEFAULT_WORKSPACE_CLOSE,
-    desktopSettingsLauncher: value?.desktopSettingsLauncher ?? DEFAULT_DESKTOP_SETTINGS_LAUNCHER,
+    stableSessionTitle: resolveFlag(value?.stableSessionTitle, DEFAULT_STABLE_SESSION_TITLE),
+    hideSessionHoverActions: resolveFlag(value?.hideSessionHoverActions, DEFAULT_HIDE_SESSION_HOVER_ACTIONS),
+    keepTurnRail: resolveFlag(value?.keepTurnRail, DEFAULT_KEEP_TURN_RAIL),
+    codeBlockFlushTop: resolveFlag(value?.codeBlockFlushTop, DEFAULT_CODE_BLOCK_FLUSH_TOP),
+    projectRunningIndicator: resolveFlag(value?.projectRunningIndicator, DEFAULT_PROJECT_RUNNING_INDICATOR),
+    locateCurrentSession: resolveFlag(value?.locateCurrentSession, DEFAULT_LOCATE_CURRENT_SESSION),
+    settingsNavScroll: resolveFlag(value?.settingsNavScroll, DEFAULT_SETTINGS_NAV_SCROLL),
+    sidebarMiddleClickClose: resolveFlag(value?.sidebarMiddleClickClose, DEFAULT_SIDEBAR_MIDDLE_CLICK_CLOSE),
+    legacyStatsLine: resolveFlag(value?.legacyStatsLine, DEFAULT_LEGACY_STATS_LINE),
+    pillsCacheHitDecimals: resolveFlag(value?.pillsCacheHitDecimals, DEFAULT_PILLS_CACHE_HIT_DECIMALS),
+    turnTimePill: resolveFlag(value?.turnTimePill, DEFAULT_TURN_TIME_PILL),
+    turnProcessCounts: resolveFlag(value?.turnProcessCounts, DEFAULT_TURN_PROCESS_COUNTS),
+    runningStatus: resolveFlag(value?.runningStatus, DEFAULT_RUNNING_STATUS),
+    opaqueStatDialogs: resolveFlag(value?.opaqueStatDialogs, DEFAULT_OPAQUE_STAT_DIALOGS),
+    contextPillNoTooltip: resolveFlag(value?.contextPillNoTooltip, DEFAULT_CONTEXT_PILL_NO_TOOLTIP),
+    legacyContextMeter: resolveFlag(value?.legacyContextMeter, DEFAULT_LEGACY_CONTEXT_METER),
+    workspaceClose: resolveFlag(value?.workspaceClose, DEFAULT_WORKSPACE_CLOSE),
+    desktopSettingsLauncher: resolveFlag(value?.desktopSettingsLauncher, DEFAULT_DESKTOP_SETTINGS_LAUNCHER),
     closedWorkspaces: resolveClosedWorkspaces(value?.closedWorkspaces),
-    rightbarInitialWidth: value?.rightbarInitialWidth ?? DEFAULT_RIGHTBAR_INITIAL_WIDTH,
+    rightbarInitialWidth: resolveFlag(value?.rightbarInitialWidth, DEFAULT_RIGHTBAR_INITIAL_WIDTH),
     rightbarWidthPercent: resolveRightbarPercent(value?.rightbarWidthPercent),
-    historyPageSizeEnabled: value?.historyPageSizeEnabled ?? DEFAULT_HISTORY_PAGE_SIZE_ENABLED,
+    historyPageSizeEnabled: resolveFlag(value?.historyPageSizeEnabled, DEFAULT_HISTORY_PAGE_SIZE_ENABLED),
     historyPageSize: resolveHistoryPageSize(value?.historyPageSize),
-    historyPageSizeColdStart: value?.historyPageSizeColdStart ?? DEFAULT_HISTORY_PAGE_SIZE_COLD_START,
+    historyPageSizeColdStart: resolveFlag(value?.historyPageSizeColdStart, DEFAULT_HISTORY_PAGE_SIZE_COLD_START),
   }
 }

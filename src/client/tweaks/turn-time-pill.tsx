@@ -86,6 +86,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { deriveTurnRunMs, deriveTurnSpeedMetrics } from './assistant-stream-timing.ts'
+import { claimStyleNode, releaseStyleNode } from '../style-node.ts'
 
 /** Full props of the actions-row entry (owner + session kit + plugin locale seat). */
 type TurnTimePillProps = PropsRuntime<'conversation.chat.assistant-actions'> & PropsLocale<'style-tweaks'>
@@ -178,7 +179,8 @@ function installTurnTimePillStyles(): () => void {
     style.textContent = TURN_TIME_PILL_CSS
     document.head.appendChild(style)
   }
-  return () => { style?.remove() }
+  const owner = claimStyleNode(style)
+  return () => { releaseStyleNode(style, owner) }
 }
 
 /**

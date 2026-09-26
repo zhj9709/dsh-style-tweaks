@@ -67,6 +67,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ContextPressureProjection } from '@deepseek-ai/dsh-token-meter/client'
+import { claimStyleNode, releaseStyleNode } from '../style-node.ts'
 
 /** The slot machinery's translate seat for the plugin namespace. */
 type MeterTranslate = PropsLocale<'style-tweaks'>['t']
@@ -349,7 +350,8 @@ function installMeterStyles(): () => void {
     style.textContent = METER_CSS
     document.head.appendChild(style)
   }
-  return () => { style?.remove() }
+  const owner = claimStyleNode(style)
+  return () => { releaseStyleNode(style, owner) }
 }
 
 /**

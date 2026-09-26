@@ -34,6 +34,8 @@
  * inert.
  */
 
+import { claimStyleNode, releaseStyleNode } from '../style-node.ts'
+
 const HIDE_SESSION_HOVER_ACTIONS_CSS = `
 [data-slot="sidebar.workspaces.session.row.action"] {
   display: none !important;
@@ -51,5 +53,6 @@ export function injectHideSessionHoverActionsStyles(): () => void {
     style.textContent = HIDE_SESSION_HOVER_ACTIONS_CSS
     document.head.appendChild(style)
   }
-  return () => { style?.remove() }
+  const owner = claimStyleNode(style)
+  return () => { releaseStyleNode(style, owner) }
 }

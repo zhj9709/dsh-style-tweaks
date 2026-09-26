@@ -82,6 +82,8 @@
  * this tweak trades that behaviour for keeping the navigation affordance.
  */
 
+import { claimStyleNode, releaseStyleNode } from '../style-node.ts'
+
 const KEEP_TURN_RAIL_SELECTOR = ':has([data-chat-flow]) > *:has(> nav):not([data-chat-flow])'
 
 const KEEP_TURN_RAIL_CSS = `
@@ -110,5 +112,6 @@ export function injectKeepTurnRailStyles(): () => void {
   // receiver can load a new bundle before this tweak's old <style> is torn
   // down, and an existing node would otherwise retain the stale selector.
   if (style.textContent !== KEEP_TURN_RAIL_CSS) style.textContent = KEEP_TURN_RAIL_CSS
-  return () => { style?.remove() }
+  const owner = claimStyleNode(style)
+  return () => { releaseStyleNode(style, owner) }
 }

@@ -76,7 +76,8 @@
  * @module dsh-style-tweaks/client/settings-nav-icon
  */
 
-import { NAV_LIST_SELECTOR } from './tweaks/settings-nav-scroll.ts'
+import { touchesScope } from './mutation-scope.ts'
+import { NAV_LIST_SELECTOR, NAV_LIST_WATCH_SELECTOR } from './tweaks/settings-nav-scroll.ts'
 
 /** The label span inside a nav cell. */
 const NAV_LABEL_SELECTOR = '[class*="_navLabel"]'
@@ -209,16 +210,25 @@ export function setupSettingsNavIcon(label: () => string): () => void {
     }
   }
 
+  let disposed = false
   let queued = false
-  const observer = new MutationObserver(() => {
-    if (queued) return
+  const observer = new MutationObserver((records) => {
+    if (disposed || queued) return
+    // The rail is the only thing this tweak reads. Without the gate the
+    // document-wide observer would run a `querySelector` for every frame of a
+    // streaming answer, for a dialog that is not even open.
+    if (!touchesScope(records, NAV_LIST_WATCH_SELECTOR)) return
     queued = true
     queueMicrotask(() => {
       queued = false
-      // A swap is already in place, or the dialog is closed: nothing to do.
-      // Opening the panel rebuilds the rail, which is exactly the case that
-      // arrives here with cells but no replacement.
-      if (document.querySelector(`svg[${MARK_ATTR}]`) !== null) return
+      if (disposed) return
+      // The list is gone again (the dialog closed): nothing to swap into.
+      //
+      // No "a swap is already in place" early return: `swap()` is idempotent
+      // per cell (it skips any cell that already carries the replacement), so
+      // a document-wide `svg[MARK]` query here only cost a full-tree walk on
+      // every tick — and it returned early when *any* cell was swapped, which
+      // would have stranded the rest of a multi-cell rail.
       if (cells().length === 0) return
       swap()
     })
@@ -227,9 +237,14 @@ export function setupSettingsNavIcon(label: () => string): () => void {
   swap()
 
   const cleanup = (): void => {
+    if (disposed) return
+    disposed = true
     observer.disconnect()
     restore()
-    setGlobalCleanup(undefined)
+    // Identity-checked, like `running-status` / `workspace-close`: a late
+    // cleanup from an older bundle instance must not clear the marker the
+    // instance that replaced it just published.
+    if (getGlobalCleanup() === cleanup) setGlobalCleanup(undefined)
   }
   setGlobalCleanup(cleanup)
   return cleanup

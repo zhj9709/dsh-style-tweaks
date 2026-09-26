@@ -28,6 +28,8 @@
  * and earlier) the selector matches nothing and the tweak is inert.
  */
 
+import { claimStyleNode, releaseStyleNode } from '../style-node.ts'
+
 const CONTEXT_PILL_NO_TOOLTIP_CSS = `
 button:has(> svg[viewBox="0 0 14 14"] > circle) + span[role="tooltip"] {
   display: none;
@@ -45,5 +47,6 @@ export function injectContextPillNoTooltipStyles(): () => void {
     style.textContent = CONTEXT_PILL_NO_TOOLTIP_CSS
     document.head.appendChild(style)
   }
-  return () => { style?.remove() }
+  const owner = claimStyleNode(style)
+  return () => { releaseStyleNode(style, owner) }
 }

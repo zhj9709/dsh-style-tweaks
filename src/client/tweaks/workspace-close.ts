@@ -54,6 +54,7 @@ import { createElement, Fragment, useSyncExternalStore } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { Button, IconCloseOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import { touchesScope } from '../mutation-scope.ts'
 import { resolveClosedWorkspaces } from '../tweak-config.ts'
 
 /** One Workspace row, as far as this tweak reads it. */
@@ -341,6 +342,7 @@ function CloseDialog({ store, t }: { store: CloseDialogStore, t: Translate }) {
 
 /** One injected menu entry plus the React root holding its glyph. */
 interface InjectedEntry {
+  readonly menu: Element
   readonly entry: HTMLButtonElement
   readonly iconRoot: Root | undefined
 }
@@ -719,6 +721,8 @@ export function setupWorkspaceClose(
   }
 
   // ── Settings convergence (a change that lands without a remount) ───────
+  /** Set by the disposer; every queued microtask checks it before touching the DOM. */
+  let disposed = false
   const unsubscribeSettings = settings.subscribe(() => {
     applyClosed(resolveClosedWorkspaces(settings.getSnapshot().value?.closedWorkspaces), false)
   })
@@ -730,6 +734,7 @@ export function setupWorkspaceClose(
     pruneScheduled = true
     queueMicrotask(() => {
       pruneScheduled = false
+      if (disposed) return
       pruneClosed()
     })
   }
@@ -753,6 +758,26 @@ export function setupWorkspaceClose(
   document.addEventListener('pointerdown', onPointerDown, true)
 
   const injected = new Set<InjectedEntry>()
+
+  /**
+   * Drop entries whose host menu has left the document.
+   *
+   * The host re-renders its menus, and every re-render abandons the previous
+   * element. This set is the only thing keeping that element (and the React
+   * root mounted inside it) alive, so without this pass a session of opening
+   * and closing menus leaks one root per menu. The attribute goes back off too:
+   * if the host ever re-attaches the same node, `injectIntoMenu` must run
+   * again rather than find a marked menu with an unmounted icon seat.
+   */
+  const evictDetached = (): void => {
+    for (const item of injected) {
+      if (item.entry.isConnected) continue
+      item.iconRoot?.unmount()
+      item.entry.remove()
+      item.menu.removeAttribute(MENU_INJECTED_ATTR)
+      injected.delete(item)
+    }
+  }
 
   const injectIntoMenu = (menu: Element): void => {
     if (menu.hasAttribute(MENU_INJECTED_ATTR)) return
@@ -782,13 +807,24 @@ export function setupWorkspaceClose(
     // Our row is in the document now, so the card is at its final height: let
     // the host re-run its own placement against it (see above).
     refitMenuIfOverflowing(menu)
-    injected.add({ entry, iconRoot })
+    injected.add({ menu, entry, iconRoot })
   }
 
   const syncMenus = (): void => {
+    evictDetached()
+    const live = new Set<Element>()
+    for (const item of injected) live.add(item.menu)
     for (const menu of document.querySelectorAll(MENU_SELECTOR)) {
       if (!menu.isConnected) continue
+      // A live tracked entry is the authority, not the marker: a host re-render
+      // can rebuild the menu's item list and drop our cloned row while the menu
+      // element itself survives, which would leave the marker set with nothing
+      // behind it and the entry gone for good. Clearing the marker makes
+      // `injectIntoMenu` run again; `live` keeps it to one injection per pass.
+      if (live.has(menu)) continue
+      menu.removeAttribute(MENU_INJECTED_ATTR)
       injectIntoMenu(menu)
+      if (menu.hasAttribute(MENU_INJECTED_ATTR)) live.add(menu)
     }
   }
 
@@ -798,11 +834,20 @@ export function setupWorkspaceClose(
     syncScheduled = true
     queueMicrotask(() => {
       syncScheduled = false
+      // Teardown drains the observer, but a microtask already queued when the
+      // disposer ran would still inject our entry into every open menu — with
+      // no disposer left to take it back out.
+      if (disposed) return
       syncMenus()
     })
   }
 
-  const observer = new MutationObserver(() => { scheduleSync() })
+  const observer = new MutationObserver((records) => {
+    // The menus are the only thing `syncMenus` reads. Without the gate, a
+    // streaming answer would run a document-wide `[role="menu"]` sweep on every
+    // frame for a menu that is not open.
+    if (touchesScope(records, MENU_SELECTOR)) scheduleSync()
+  })
   observer.observe(document.body, { childList: true, subtree: true })
   syncMenus()
   // Startup pass: an id whose Workspace was deleted while the tweak was off
@@ -811,6 +856,8 @@ export function setupWorkspaceClose(
 
   // ── Teardown ───────────────────────────────────────────────────────────
   const cleanup = (): void => {
+    if (disposed) return
+    disposed = true
     // Whether our read face differs from the host's own right now. Captured
     // up front: closing never mutates `closedSet`, so this is exactly what
     // the poke below must reflect — and with an empty set the wrapper

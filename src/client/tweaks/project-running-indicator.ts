@@ -118,6 +118,8 @@ import { StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import { touchesScope } from '../mutation-scope.ts'
+import { claimStyleNode, releaseStyleNode } from '../style-node.ts'
 
 /** Structural view of the app's session-list snapshot store (read face only). */
 interface SnapshotStoreLike<S> {
@@ -232,6 +234,12 @@ const INDICATOR_CSS_ID = 'cst-project-running-indicator'
 const HEADER_SELECTOR = '[role="treeitem"][aria-expanded]'
 /** Session rows carry the CSS-Modules local name `sessionRow` (search rows do not). */
 const SESSION_ROW_SELECTOR = '[role="treeitem"][class*="sessionRow"]'
+/**
+ * The rows `sync` decorates, as one `touchesScope` selector list. Both of its
+ * sweeps are keyed on these two selectors, and the indicator it mounts lives
+ * inside the row — so a batch that touches neither cannot change its work.
+ */
+const TREE_ROW_SCOPE = `${HEADER_SELECTOR},${SESSION_ROW_SELECTOR}`
 /** `GroupNode.key` of the bucket holding sessions outside every Workspace (tree.ts). */
 const UNGROUPED_KEY = ''
 
@@ -244,7 +252,8 @@ function installIndicatorStyles(): () => void {
     style.textContent = INDICATOR_CSS
     document.head.appendChild(style)
   }
-  return () => { style?.remove() }
+  const owner = claimStyleNode(style)
+  return () => { releaseStyleNode(style, owner) }
 }
 
 /**
@@ -559,17 +568,27 @@ export function setupProjectRunningIndicator(ctx: ClientContext): () => void {
   // Coalesce a burst of DOM mutations into one scan per microtask: the
   // observer spans `document.body` and every streaming chunk lights it up
   // for a few ticks, but they all settle before the microtask queue drains.
+  let disposed = false
   let syncScheduled = false
   const scheduleSync = (): void => {
     if (syncScheduled) return
     syncScheduled = true
     queueMicrotask(() => {
       syncScheduled = false
+      // A microtask already queued when the disposer ran must not mount again:
+      // `sync()` creates React roots and indicator nodes that nothing would
+      // own afterwards.
+      if (disposed) return
       sync()
     })
   }
 
-  const observer = new MutationObserver(() => { scheduleSync() })
+  const observer = new MutationObserver((records) => {
+    // `sync` walks document-wide for header and session rows, so the gate names
+    // exactly those: without it every frame of a streaming answer would run two
+    // `querySelectorAll` sweeps over the whole document.
+    if (touchesScope(records, TREE_ROW_SCOPE)) scheduleSync()
+  })
   observer.observe(document.body, { childList: true, subtree: true })
 
   const unsubscribeSessions = sessionList.subscribe(() => { scheduleSync() })
@@ -577,13 +596,15 @@ export function setupProjectRunningIndicator(ctx: ClientContext): () => void {
   sync()
 
   const cleanup = (): void => {
+    if (disposed) return
+    disposed = true
     unsubscribeSessions()
     unsubscribeWorkspaces()
     observer.disconnect()
     for (const row of [...indicators.keys()]) removeIndicator(indicators, row)
     for (const row of [...sessionIndicators.keys()]) removeIndicator(sessionIndicators, row)
     removeStyles()
-    setGlobalCleanup(undefined)
+    if (getGlobalCleanup() === cleanup) setGlobalCleanup(undefined)
   }
   setGlobalCleanup(cleanup)
   return cleanup

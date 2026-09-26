@@ -58,6 +58,7 @@ import type {} from '@deepseek-ai/dsh-token-meter/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { probeComposerDockLayout } from './composer-dock.ts'
 import { billedInputTokens, formatCacheHitPercent } from './stats-cache-hit.ts'
+import { claimStyleNode, releaseStyleNode } from '../style-node.ts'
 
 /** The slot machinery's translate seat for the plugin namespace. */
 type LegacyTranslate = PropsLocale<'style-tweaks'>['t']
@@ -230,7 +231,8 @@ function installLegacyStatsStyles(): () => void {
     style.textContent = LEGACY_STATS_CSS
     document.head.appendChild(style)
   }
-  return () => { style?.remove() }
+  const owner = claimStyleNode(style)
+  return () => { releaseStyleNode(style, owner) }
 }
 
 /**

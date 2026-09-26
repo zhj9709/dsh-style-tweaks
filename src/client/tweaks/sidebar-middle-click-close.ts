@@ -261,11 +261,18 @@ export function setupSidebarMiddleClickClose(ctx: ClientContext): () => void {
   document.addEventListener('mousedown', onMouseDown, true)
   document.addEventListener('auxclick', onAuxClick, true)
 
+  // Every handler here is synchronous and there is no observer, timer or
+  // microtask, so the flag only makes the disposer itself idempotent.
+  let disposed = false
   const cleanup = (): void => {
+    if (disposed) return
+    disposed = true
     document.removeEventListener('pointerdown', onPointerDown, true)
     document.removeEventListener('mousedown', onMouseDown, true)
     document.removeEventListener('auxclick', onAuxClick, true)
-    setGlobalCleanup(undefined)
+    // Identity-checked: a late cleanup from an older bundle instance must not
+    // clear the marker the instance that replaced it just published.
+    if (getGlobalCleanup() === cleanup) setGlobalCleanup(undefined)
   }
   setGlobalCleanup(cleanup)
   return cleanup

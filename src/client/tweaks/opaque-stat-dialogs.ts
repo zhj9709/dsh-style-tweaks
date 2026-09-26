@@ -79,6 +79,8 @@
  * there.
  */
 
+import { claimStyleNode, releaseStyleNode } from '../style-node.ts'
+
 const OPAQUE_STAT_DIALOGS_CSS = `
 /* The host's stat dialogs (turn-tail usage pill + composer stats / usage pills). */
 body [class$="_panel"][role="dialog"]:has(> [class$="_details"]),
@@ -103,5 +105,6 @@ export function injectOpaqueStatDialogsStyles(): () => void {
     style.textContent = OPAQUE_STAT_DIALOGS_CSS
     document.head.appendChild(style)
   }
-  return () => { style?.remove() }
+  const owner = claimStyleNode(style)
+  return () => { releaseStyleNode(style, owner) }
 }

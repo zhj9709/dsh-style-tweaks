@@ -112,7 +112,7 @@ const RIGHTBAR_HANDLE_SELECTOR = '[data-side="rightbar"]'
 const SEEDED_KEY = '__cst_rightbar_initial_width_seeded__'
 /** Page-level marker: the user dragged the right column's handle. */
 const DRAGGED_KEY = '__cst_rightbar_initial_width_dragged__'
-/** Page-level marker: the one-shot drag probe is already armed. */
+/** Page-level marker: a live drag probe currently holds the document listener. */
 const PROBE_KEY = '__cst_rightbar_initial_width_probe__'
 
 /** The piece of `ctx.layout`'s controller this tweak needs. */
@@ -147,17 +147,28 @@ function userDragged(): boolean {
 }
 
 /**
- * Arm the one-shot drag probe.
+ * Arm the one-shot drag probe; returns the function that disarms it.
  *
  * A `pointerdown` anywhere in the document is inspected once per press
  * (capture phase, read-only — nothing is intercepted) and the probe retires
- * itself the first time it lands on the right column's handle. The flag it
- * leaves behind is page-level, so it survives the re-mount that every
- * settings change triggers.
+ * itself the first time it lands on the right column's handle.
+ *
+ * The listener belongs to the mount that armed it. `installRightbarInitialWidth`
+ * re-runs on every settings change, so a listener that the disposer could not
+ * take back was a registration that outlived the instance holding it; the
+ * released marker makes the next mount arm a fresh one. What survives a
+ * re-mount is the FLAG the probe leaves behind (`DRAGGED_KEY`, page-level):
+ * that is the part a later mount must still see, so the user's own drag keeps
+ * outranking the configured percentage.
+ *
+ * The one drag this cannot observe is one made while the probe is disarmed —
+ * i.e. while the tweak is switched off. Nothing is seeded in that window
+ * either, so a re-enable seeds the configured percentage on the next open,
+ * which is what enabling the tweak means.
  */
-function armDragProbe(): void {
+function armDragProbe(): () => void {
   const store = markers()
-  if (store[PROBE_KEY] === true) return
+  if (store[PROBE_KEY] === true) return () => {}
   store[PROBE_KEY] = true
   const onPointerDown = (event: PointerEvent): void => {
     const target = event.target
@@ -167,6 +178,12 @@ function armDragProbe(): void {
     store[DRAGGED_KEY] = true
   }
   document.addEventListener('pointerdown', onPointerDown, true)
+  return () => {
+    document.removeEventListener('pointerdown', onPointerDown, true)
+    // A probe that never fired must be re-armable by the next mount; once it
+    // has fired, the page-level flag answers for every mount that follows.
+    if (store[DRAGGED_KEY] !== true) store[PROBE_KEY] = false
+  }
 }
 
 /** Whether the right Sidebar is open right now, in either presentation. */
@@ -234,12 +251,11 @@ function writeWidth(panels: NonNullable<LayoutControllerLike['panels']>, percent
 /**
  * Mount the right Sidebar initial-width axis.
  *
- * Returns a disposer that restores the host's own `openRightbar` (and does
- * nothing else — no listeners beyond the one-shot drag probe, no styles, no
- * DOM nodes). The tweak stays inert on hosts without the 0.1.5 right
- * Sidebar, on hosts whose controller no longer carries a `setRightbar`
- * action, and for the rest of a page load in which the user has resized the
- * sidebar by hand.
+ * Returns a disposer that restores the host's own `openRightbar` and disarms
+ * the one-shot drag probe (no styles, no DOM nodes). The tweak stays inert on
+ * hosts without the 0.1.5 right Sidebar, on hosts whose controller no longer
+ * carries a `setRightbar` action, and for the rest of a page load in which the
+ * user has resized the sidebar by hand.
  * @param ctx - client root context.
  * @param percent - the configured first-open width as a percentage of the frame.
  * @returns the disposer to call when the tweak is disabled or re-mounted.
@@ -255,19 +271,28 @@ export function installRightbarInitialWidth(ctx: ClientContext, percent: number)
   const clamped = resolveRightbarPercent(percent)
 
   // The user's own drag outranks the configured percentage for this page load.
-  armDragProbe()
-  if (userDragged()) return noop
+  // Every exit below hands the probe back: a mount that does no work must not
+  // leave its listener behind for the rest of the page.
+  const releaseProbe = armDragProbe()
+  if (userDragged()) {
+    releaseProbe()
+    return noop
+  }
 
   // The sidebar is open as this mounts: that mount IS the user editing the
   // percentage, so show the result now instead of waiting for a re-open.
   if (sidebarOpen()) {
     if (writeWidth(panels, clamped)) markSeeded()
+    releaseProbe()
     return noop
   }
 
   // A closed sidebar on a page that already wrote its width: the stored px
   // (which the user may have dragged) stands. Nothing to arm, nothing to do.
-  if (alreadySeeded()) return noop
+  if (alreadySeeded()) {
+    releaseProbe()
+    return noop
+  }
 
   // First open of this page load: write before forwarding, so the column
   // reaches its final width in the same React commit as the open itself.
@@ -283,6 +308,7 @@ export function installRightbarInitialWidth(ctx: ClientContext, percent: number)
   face.openRightbar = wrapper
 
   return () => {
+    releaseProbe()
     // Only unwind our own wrapper: another plugin may have wrapped the same
     // method in the meantime, and its wrapper must survive this disposal.
     if (face.openRightbar === wrapper) face.openRightbar = original

@@ -87,6 +87,8 @@
  * selector.
  */
 
+import { claimStyleNode, releaseStyleNode } from '../style-node.ts'
+
 const CODE_BLOCK_FLUSH_TOP_CSS = `
 /* Outer gap above the highlighted box: DSH's wrapper rule (.block { margin:
  * 16px 0 }, CodeBlock.module.css:13) sets the wrapper's top/bottom margin
@@ -141,5 +143,6 @@ export function injectCodeBlockFlushTopStyles(): () => void {
     style.textContent = CODE_BLOCK_FLUSH_TOP_CSS
     document.head.appendChild(style)
   }
-  return () => { style?.remove() }
+  const owner = claimStyleNode(style)
+  return () => { releaseStyleNode(style, owner) }
 }

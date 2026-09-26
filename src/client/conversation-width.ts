@@ -66,6 +66,7 @@
  */
 
 import { CONVERSATION_WIDTH_STORAGE_KEY } from './tweak-config.ts'
+import { claimStyleNode, releaseStyleNode } from './style-node.ts'
 
 /** Stable attribute selector for the native WidthHandle strips (CSS-Modules-hashed class). */
 const HANDLE_HIDE_RULE = '[data-width-handle]{display:none !important}'
@@ -112,6 +113,7 @@ export function installConversationWidthStyles(widthPx: number, sideMargin: numb
     style.dataset.pluginCss = id
     document.head.appendChild(style)
   }
+  const owner = claimStyleNode(style)
 
   // Persist to the shared storage slot so toggling plugin-width off surfaces
   // the user's last choice in the native drag handles.
@@ -150,7 +152,7 @@ export function installConversationWidthStyles(widthPx: number, sideMargin: numb
       if (root !== null) {
         root.style.setProperty('--dsh-chat-user-width', `${currentWidth}px`)
       }
-      style?.remove()
+      releaseStyleNode(style, owner)
       document.documentElement.style.removeProperty('--dsh-dialog-width-chat-width')
     },
   }
