@@ -89,8 +89,8 @@ dsh plugin --profile web add github:zhj9709/dsh-style-tweaks
 `add` 后面的包说明会**原样转发给 pnpm**，因此可以指定版本——npm 包用 `@版本号`，GitHub 源码用 `#tag`：
 
 ```bash
-dsh plugin --profile web add dsh-style-tweaks@0.1.4                  # 锁定 npm 版本
-dsh plugin --profile web add github:zhj9709/dsh-style-tweaks#v0.1.4  # 锁定 git tag
+dsh plugin --profile web add dsh-style-tweaks@0.1.5                  # 锁定 npm 版本
+dsh plugin --profile web add github:zhj9709/dsh-style-tweaks#v0.1.5  # 锁定 git tag
 ```
 
 安装完成后**重启一次 `dsh web`**（bundle 插件在进程启动时扫描）。
@@ -234,7 +234,7 @@ dsh plugin --profile web add github:zhj9709/dsh-style-tweaks
 ```bash
 pnpm build
 pnpm pack            # 产出 dsh-style-tweaks-<版本>.tgz（在 .gitignore 里，不要提交）
-dsh plugin --profile web add ./dsh-style-tweaks-0.1.4.tgz
+dsh plugin --profile web add ./dsh-style-tweaks-0.1.5.tgz
 ```
 
 装完**重启一次 `dsh web`**（bundle 插件在进程启动时扫描）。
@@ -275,7 +275,7 @@ dsh plugin --profile web add ./dsh-style-tweaks-0.1.4.tgz
 
 ```bash
 dsh plugin --profile web remove dsh-style-tweaks
-dsh plugin --profile web add ./dsh-style-tweaks-0.1.4.tgz
+dsh plugin --profile web add ./dsh-style-tweaks-0.1.5.tgz
 ```
 
 两个方案的差别只有「产物是否自动落到位」这一条：都要 `pnpm build`，都要刷新页面。

@@ -90,8 +90,8 @@ The package spec after `add` is forwarded to pnpm verbatim, so versions can be
 pinned — `@version` for the npm package, `#tag` for the GitHub source:
 
 ```bash
-dsh plugin --profile web add dsh-style-tweaks@0.1.4                  # pin the npm version
-dsh plugin --profile web add github:zhj9709/dsh-style-tweaks#v0.1.4  # pin a git tag
+dsh plugin --profile web add dsh-style-tweaks@0.1.5                  # pin the npm version
+dsh plugin --profile web add github:zhj9709/dsh-style-tweaks#v0.1.5  # pin a git tag
 ```
 
 Restart DSH web once after installing (bundle plugins are scanned at process start).
@@ -249,7 +249,7 @@ source change has to be copied over — exactly the step the `link:` setup spare
 ```bash
 pnpm build
 pnpm pack            # produces dsh-style-tweaks-<version>.tgz (gitignored; do not commit)
-dsh plugin --profile web add ./dsh-style-tweaks-0.1.4.tgz
+dsh plugin --profile web add ./dsh-style-tweaks-0.1.5.tgz
 ```
 
 **Restart `dsh web` once** after installing (bundle plugins are scanned at process start).
@@ -294,7 +294,7 @@ path dependency:
 
 ```bash
 dsh plugin --profile web remove dsh-style-tweaks
-dsh plugin --profile web add ./dsh-style-tweaks-0.1.4.tgz
+dsh plugin --profile web add ./dsh-style-tweaks-0.1.5.tgz
 ```
 
 The only difference between the two setups is whether the artifact lands in place automatically: both
