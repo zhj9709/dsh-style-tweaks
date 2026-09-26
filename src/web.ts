@@ -458,9 +458,20 @@ export class StyleTweaksWebBackend {
 
   /** One settings-backend write: host CAS + pipeline, then its fresh snapshot. */
   private async settingsWrite(parsed: StyleTweaksRequest): Promise<StyleTweaksSnapshot> {
+    // Validate here, exactly as the store backend does, rather than letting the
+    // host discover a bad field name. The host answers an unknown field with its
+    // own plain `Error`, which is not a `FieldRejectionError` and so falls
+    // through to the catch-all and leaves as a 503 — a caller who typed a field
+    // that does not exist would be told the service is unavailable, and the
+    // client's retry ladder would spend ~5s riding out a request that can never
+    // succeed. Validating first makes the two backends answer identically, and
+    // sends the schema-parsed value rather than the raw one, as the store path
+    // does.
     if (parsed.action === 'set') {
-      await this.ctx.settings.update(STYLE_TWEAKS_SETTINGS_NAMESPACE, { [parsed.field]: parsed.value }, parsed.expectedRevision)
+      const value = validateField(parsed.field, parsed.value)
+      await this.ctx.settings.update(STYLE_TWEAKS_SETTINGS_NAMESPACE, { [parsed.field]: value }, parsed.expectedRevision)
     } else {
+      assertKnownField(parsed.field)
       await this.ctx.settings.mutate(STYLE_TWEAKS_SETTINGS_NAMESPACE, [{ op: 'unset', path: [parsed.field] }], parsed.expectedRevision)
     }
     return this.snapshot()

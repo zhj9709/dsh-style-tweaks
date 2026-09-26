@@ -30,7 +30,10 @@
  *
  * Usage:
  *
- *   node scripts/check-route-fence.mjs
+ *   pnpm build && pnpm verify:route
+ *
+ * The build is not optional. This script grades `lib/`, and `lib/` older than
+ * `src/` is refused up front rather than quietly passing — see `staleBuildMessage`.
  *
  * Exit status: 0 when every case matched, 1 otherwise.
  */
@@ -39,9 +42,46 @@ import { createServer, request as httpRequest } from 'node:http'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, basename } from 'node:path'
+import { stat } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
 import { SETTINGS_ROUTE, StyleTweaksWebBackend, installStyleTweaksWeb } from '../lib/web.js'
-import { STYLE_TWEAKS_SETTINGS_NAMESPACE } from '../lib/config.js'
+import { STYLE_TWEAKS_SETTINGS_NAMESPACE, StyleTweaksFields } from '../lib/config.js'
+
+/** Field names the schema declares, read from the built product rather than restated. */
+const DECLARED_FIELDS = new Set(Object.keys(StyleTweaksFields.dict))
+
+const root = fileURLToPath(new URL('..', import.meta.url))
+/** Sources whose compiled output these cases actually exercise. */
+const SOURCES = ['web.ts', 'config.ts', 'store.ts', 'index.ts']
+/** Their compiled counterparts, which the imports above pull in. */
+const PRODUCTS = ['web.js', 'config.js', 'store.js', 'index.js']
+
+/**
+ * Refuse to grade a build that is older than the source it came from.
+ *
+ * `pnpm verify:route` does not build, and a stale `lib/` is the quiet failure
+ * mode of a check like this one: every case passes, describing code that is no
+ * longer the code in the tree. Comparing the oldest product against the newest
+ * source catches "you edited `web.ts` and ran the check anyway", which is the
+ * case that matters, and it fails loudly instead of rebuilding behind the
+ * caller's back.
+ * @returns A message when the build is stale, otherwise undefined.
+ */
+async function staleBuildMessage() {
+  const mtime = async (path) => (await stat(path)).mtimeMs
+  let newestSource = 0
+  for (const name of SOURCES) {
+    newestSource = Math.max(newestSource, await mtime(join(root, 'src', name)))
+  }
+  let oldestProduct = Infinity
+  for (const name of PRODUCTS) {
+    oldestProduct = Math.min(oldestProduct, await mtime(join(root, 'lib', name)))
+  }
+  if (oldestProduct >= newestSource) return undefined
+  return 'lib/ is older than src/ — these cases would grade a build that is no longer in the tree.\n'
+    + '       Run `pnpm build` first, then re-run this check.'
+}
 
 /** The genuine host fence. Invoked with a stand-in carrying its two inputs. */
 const hostRequestRejection = HostConnectionService.prototype.requestRejection
@@ -77,7 +117,7 @@ function storeOf(services) {
 }
 
 /** A plugin context that records the route `installStyleTweaksWeb` registers. */
-function hostContext({ conn, describe, trustedHosts = [] }) {
+function hostContext({ conn, describe, trustedHosts = [], settings } = {}) {
   const registered = {}
   const logger = { info() {}, warn() {}, error() {} }
   const child = {
@@ -93,7 +133,10 @@ function hostContext({ conn, describe, trustedHosts = [] }) {
       inject(_names, callback) { callback(child); },
       logger,
       reflect: child.reflect,
-      settings: {
+      // A caller can hand in a whole settings service to stand in for the
+      // legacy backend, whose rejections come from the host rather than from
+      // this plugin's own validation.
+      settings: settings ?? {
         writable: true,
         describe,
         update: async () => {},
@@ -378,6 +421,12 @@ const report = (ok, label, detail, because) => {
   console.log(`${ok ? 'ok  ' : 'FAIL'} ${label.padEnd(52)} ${detail}${because === undefined ? '' : `\n     ↳ ${because}`}`)
 }
 
+const stale = await staleBuildMessage()
+if (stale !== undefined) {
+  console.error(`[check-route-fence] ${stale}`)
+  process.exit(1)
+}
+
 const dir = await mkdtemp(join(tmpdir(), 'style-tweaks-fence-'))
 let server
 try {
@@ -427,6 +476,44 @@ try {
     const clean = testCase.after === undefined ? true : testCase.after()
     report(testCase.expect(r) && clean, testCase.label, `${r.status} ${JSON.stringify(r.text.slice(0, 48))}`)
   }
+
+  // The legacy backend (`storePath === undefined`: a pre-0.1.7 host, or a
+  // profile patch whose path does not resolve) has to grade a bad field the
+  // same way the store backend does. It used not to: the field went straight to
+  // the host, whose plain `Error` for an unknown name fell through to the
+  // catch-all and left as a 503 — which reads as "the service is down" and makes
+  // the client retry a request that can never succeed. The stand-in below throws
+  // the way the real host does, so a regression here is the 503 coming back.
+  const hostRejectsUnknownField = {
+    writable: true,
+    describe: seededRows,
+    update: async (_namespace, patch) => {
+      for (const field of Object.keys(patch)) {
+        if (!DECLARED_FIELDS.has(field)) throw new Error(`Config field "${field}" is not volatile`)
+      }
+    },
+    mutate: async () => { throw new Error('Config field is not volatile') },
+  }
+  const legacy = hostContext({ conn: undefined, describe: seededRows, settings: hostRejectsUnknownField })
+  installStyleTweaksWeb(legacy.ctx, new StyleTweaksWebBackend(legacy.ctx, undefined))
+  const storeRoute = main.registered.route
+  main.registered.route = legacy.registered.route
+  for (const [label, payload, expect] of [
+    ['legacy: undeclared field is 400, not 503', { action: 'set', field: 'notAField', value: 1, expectedRevision: 0 }, (r) => r.status === 400 && r.json?.error?.code === 'settings-rejected'],
+    ['legacy: ill-typed value is 400, not 503', { action: 'set', field: 'dialogWidth', value: 'wide', expectedRevision: 0 }, (r) => r.status === 400 && r.json?.error?.code === 'settings-rejected'],
+    ['legacy: prototype key is 400, not 503', { action: 'set', field: '__proto__', value: 1, expectedRevision: 0 }, (r) => r.status === 400 && r.json?.error?.code === 'settings-rejected'],
+    ['legacy: unset of an undeclared field is 400', { action: 'unset', field: 'notAField', expectedRevision: 0 }, (r) => r.status === 400 && r.json?.error?.code === 'settings-rejected'],
+  ]) {
+    const r = await send(port, {
+      host: `127.0.0.1:${port}`,
+      origin: `http://127.0.0.1:${port}`,
+      secFetchSite: 'same-origin',
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+    report(expect(r), label, `${r.status} ${JSON.stringify(r.text.slice(0, 48))}`, 'the legacy backend must not answer a caller error as a service outage')
+  }
+  main.registered.route = storeRoute
 
   const after = await send(port, { host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}`, secFetchSite: 'same-origin' })
   const revision = after.json?.value?.revision

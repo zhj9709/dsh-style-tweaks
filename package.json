@@ -54,7 +54,8 @@
     "prepublishOnly": "pnpm build",
     "prepare": "pnpm build",
     "typecheck": "node scripts/check-mirrors.mjs && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.public.json",
-    "verify:route": "node scripts/check-route-fence.mjs"
+    "verify:route": "node scripts/check-route-fence.mjs",
+    "verify:route:live": "node scripts/check-route-trust.mjs"
   },
   "license": "MIT",
   "dsh": {
@@ -94,6 +95,7 @@
     "@deepseek-ai/cordis": "^4.0.2",
     "@deepseek-ai/dsh-api-session-controller": "0.1.7-rc.2",
     "@deepseek-ai/dsh-api-workspace-controller": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-connection": "0.1.7-rc.2",
     "@deepseek-ai/dsh-client-locale": "0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-chat": "0.1.7-rc.2",
     "@deepseek-ai/dsh-client-ui-conversation": "0.1.7-rc.2",

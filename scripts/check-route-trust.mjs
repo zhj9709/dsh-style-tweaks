@@ -13,9 +13,22 @@
  * matches it, so `Origin === Host` (the old check) proved nothing; the fence
  * must refuse on the Host alone.
  *
- * Usage (the server must already be running the build under test):
+ * Usage — this one needs a **running instance**, so it cannot be a build step:
  *
- *   node scripts/check-route-trust.mjs [port]
+ *   pnpm build                                   # so the instance serves this build
+ *   dsh web --no-open                            # in another terminal
+ *   pnpm verify:route:live                       # defaults to port 3080
+ *   pnpm verify:route:live -- 3099               # or name the port
+ *
+ * `pnpm verify:route` (the fence script) is the offline half of the same
+ * question: it drives the built route on a throwaway server, while this one
+ * asks whether the fence answers correctly once cordis, the host's Connection
+ * service and a real socket are in the way. A build can pass the first and
+ * still fail here, which is the only reason both exist.
+ *
+ * Note that the port must be an instance serving the build under test — a
+ * `dsh web` started before the last `pnpm build` will answer with whatever it
+ * loaded, and the cases below will describe that, not this commit.
  *
  * Exit status: 0 when every case matched its expectation, 1 otherwise. The two
  * failure modes it separates are the ones a restart experiment has to tell

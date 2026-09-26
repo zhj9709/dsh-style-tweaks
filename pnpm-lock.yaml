@@ -17,6 +17,9 @@ importers:
       '@deepseek-ai/dsh-api-workspace-controller':
         specifier: 0.1.7-rc.2
         version: 0.1.7-rc.2(51c79f122e7b6927d05b990aec9adeb0)
+      '@deepseek-ai/dsh-client-connection':
+        specifier: 0.1.7-rc.2
+        version: 0.1.7-rc.2(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.7-rc.2(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-scope@0.1.7-rc.2(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.7-rc.2(@deepseek-ai/cordis@4.0.2)))
       '@deepseek-ai/dsh-client-locale':
         specifier: 0.1.7-rc.2
         version: 0.1.7-rc.2(@deepseek-ai/cordis@4.0.2)
