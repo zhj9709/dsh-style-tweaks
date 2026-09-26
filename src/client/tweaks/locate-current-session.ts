@@ -45,6 +45,9 @@
  *     `ProjectRowItem` memoizes (`props.group.key`, read off the fiber
  *     chain) — never by its visible label, which two Workspaces may share
  *     when their directories are both named e.g. `pi-web`.
+ *   • Search **slot**: `div[class*="searchSlot"]`, the button's only legal
+ *     home. Required, not inferred — see {@link SEARCH_SLOT_SELECTOR} for
+ *     why the collapsed rail's own search button must be refused.
  *
  * ## Lifecycle
  *
@@ -127,6 +130,32 @@ function breadcrumbLabel(): string | undefined {
  * active language. */
 const SEARCH_BUTTON_SELECTOR = 'button[class*="searchButton"]'
 
+/**
+ * The container the button has to land in: the section header's `searchSlot`
+ * (same CSS-Modules reasoning as {@link SEARCH_BUTTON_SELECTOR} — the
+ * semantic suffix survives, the hash prefix rotates).
+ *
+ * Matching `searchButton` alone does **not** identify the wide header. DSH
+ * paints a *second* search button for the collapsed 56px rail — same
+ * `searchButton` class, same `search.sessions.aria` label, icon at 18px
+ * instead of 14px — but hung straight off the workspace browser's root:
+ *
+ *   wide: `root > sectionHeader > searchSlot > search > searchButton`
+ *   rail: `root > search > searchButton`
+ *
+ * Two parents up from the rail's button is therefore `root`, not `searchSlot`.
+ * Injecting there puts a fifth icon in the rail, and — because React only
+ * removes fibers it created — the button outlives the rail's own teardown as
+ * an orphan child of `root` that no later re-render clears, so it lingers
+ * over the expanded sidebar until the page is reloaded. Requiring the slot
+ * refuses the rail outright, which also matches what the injected CSS
+ * (`…searchSlot:has(> button.cst-locate-btn)`) and the disposer assume.
+ */
+const SEARCH_SLOT_SELECTOR = 'div[class*="searchSlot"]'
+
+/** Our own button, by the class `buildButton` puts on it. */
+const OUR_BUTTON_SELECTOR = 'button.cst-locate-btn'
+
 /** Primary anchor for the breadcrumb nav (`css.crumbs`), same reasoning. */
 const BREADCRUMB_NAV_SELECTOR = 'nav[class*="crumbs"]'
 
@@ -168,15 +197,30 @@ function anchorElement(structural: string, candidates: string, label: string | u
 /**
  * Inline SVG icon for the locate button.
  *
- * Inline SVG icon for the locate button.
+ * A stroke-based target / crosshair glyph in the host's own 16×16 viewBox.
+ * `currentColor` lets the button recolor on hover like the natives, and the
+ * colour token is already right — the button, the native search button and
+ * the native header icon buttons all resolve to
+ * `var(--dsw-alias-label-secondary)`, verified as an identical computed
+ * `rgb(97,102,107)`. What read as "darker than the others" was **weight**,
+ * not colour, so the glyph is tuned against measured ink instead:
  *
- * A stroke-based target / crosshair glyph drawn in a 16×16 viewBox to
- * match DSH's native icon coordinate system. Stroke width is the
- * user-tuned 1.1 — thin enough to feel precise, thick enough to read
- * at the 16px display size. `currentColor` lets the button recolor on
- * hover like the natives.
+ *   DSH's own `IconSearchOutlineRegular` / `IconProjectAddOutlineRegular`
+ *   are the same 16-unit viewBox at `stroke-width: 1` (dsh-client-ui-
+ *   primitives/lib/index.js), rendered at 14px and 16px. This button is a
+ *   16px cell, so its stroke is matched to the 16px native's — `1`, not the
+ *   1.1 this used to draw at, which was 26% heavier on screen than the 14px
+ *   search glyph right next to it.
+ *
+ * The 0.85 scale is the second half of the same measurement. Ink coverage
+ * (alpha summed over a 64×64 raster of each glyph) is 632 for the host's
+ * search, 1224 for its add, and 970 for this one unscaled — heavier than the
+ * lighter neighbour it sits beside, which is what the eye reports. At 0.85
+ * it lands at 645, between the two natives, and the filled centre dot stays
+ * because it is the glyph's anchor: it is what makes the mark read as a
+ * target rather than a plain circle.
  */
-const PIN_ICON_SVG = '<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" fill="none"/><path d="M8 1v3M8 12v3M1 8h3M12 8h3" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" fill="none"/><circle cx="8" cy="8" r="1.5" fill="currentColor" stroke="none"/></svg>'
+const PIN_ICON_SVG = '<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" fill="none"><g transform="translate(1.2 1.2) scale(0.85)" stroke-width="1"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-linecap="round" fill="none"/><path d="M8 1v3M8 12v3M1 8h3M12 8h3" stroke="currentColor" stroke-linecap="round" fill="none"/><circle cx="8" cy="8" r="1.5" fill="currentColor" stroke="none"/></g></svg>'
 
 /** CSS injected once per tweak-enable cycle; lives until the cycle disables. */
 const LOCATE_CSS_ID = 'cst-locate-current-session'
@@ -186,12 +230,26 @@ const LOCATE_CSS = `
  * Key styles matched from DSH's native icon buttons:
  *   - corner-shape: superellipse(1) — creates the smooth circular hover
  *     background (border-radius alone is not enough)
- *   - display: flex — native buttons use flex, not grid
+ *   - display: flex — native buttons use flex, not grid (granted by the
+ *     searchSlot child rule below, not by the base rule)
  *   - Spacing comes from the search slot's flex gap (see the slot rule
- *     below), matching the section header's native 4px icon gap */
+ *     below), matching the section header's native 4px icon gap
+ *
+ * The display:none default is NOT a state: visibility is granted below to
+ * exactly one parent — the host's searchSlot. That makes the rule structural
+ * rather than conditional, so a button that ever lands anywhere else is not
+ * painted and takes no space. This is the CSS half of the same invariant
+ * mountButton asserts in JS (SEARCH_SLOT_SELECTOR), and it is what keeps the
+ * collapsed rail clean: the host hangs its rail search block straight off the
+ * workspace browser's root, so a button parented there is not a searchSlot
+ * child and disappears instead of becoming a stray icon in the 56px rail. The
+ * JS guard stops such a button from being created; this rule guarantees the
+ * outcome even if one is — React will not remove a node it did not create, so
+ * a stray would otherwise outlive the state that produced it and survive
+ * until the next page load. */
 button.cst-locate-btn {
   flex: none;
-  display: flex;
+  display: none;
   place-items: center;
   align-items: center;
   justify-content: center;
@@ -207,6 +265,9 @@ button.cst-locate-btn {
   position: relative;
   z-index: 0;
   transition: background-color .15s ease, color .15s ease;
+}
+div[class*="searchSlot"] > button.cst-locate-btn {
+  display: flex;
 }
 button.cst-locate-btn > svg {
   width: 16px;
@@ -789,6 +850,60 @@ function syncButtonEnabledState(btn: HTMLButtonElement, sessionList: SessionList
 }
 
 /**
+ * Whether a mutation batch took a locate button out of the document — the
+ * host unmounting the whole `searchSlot` takes the button with it.
+ *
+ * That path skips the only thing that normally hides the hover bubble:
+ * `mouseleave`. A removed element emits no pointer events, so a bubble
+ * opened over the button (or focused via keyboard) would stay on screen for
+ * the rest of the page load. The keyboard route is the reachable one —
+ * collapsing the sidebar by its shortcut needs no pointer movement, so
+ * `mouseleave` never fires even when the mouse was never over the button.
+ * @param records - The batch handed to the observer.
+ * @returns Whether any removed node is, or contains, one of our buttons.
+ */
+function removedOurButton(records: readonly MutationRecord[]): boolean {
+  for (const record of records) {
+    for (const node of record.removedNodes) {
+      if (!(node instanceof Element)) continue
+      if (node.matches(OUR_BUTTON_SELECTOR)) return true
+      if (node.querySelector(OUR_BUTTON_SELECTOR) !== null) return true
+    }
+  }
+  return false
+}
+
+/**
+ * Remove every locate button that is not sitting in a `searchSlot` — the one
+ * shape the injected CSS styles, and the only one React's own teardown can
+ * be expected to reason about.
+ *
+ * The guard in {@link mountButton} already refuses to create such a button,
+ * so this is the invariant's enforcer rather than its cause: a button
+ * stranded in a React-owned container is invisible to every other check
+ * here (`mountButton` only looks inside the slot it is about to fill, the
+ * disposer only walks the buttons this instance wired), and a host that ever
+ * reshapes the header again would reproduce exactly the orphan described on
+ * {@link SEARCH_SLOT_SELECTOR} — invisible in the rail, still there after the
+ * sidebar comes back. Sweeping the strays on each sync turns that from a
+ * page-lifetime leftover into a one-tick repair.
+ *
+ * Safe against a successor instance: that instance's button is always in a
+ * slot, which is precisely the set this leaves alone.
+ */
+function pruneStrayButtons(): void {
+  let pruned = false
+  for (const btn of document.querySelectorAll<HTMLButtonElement>(OUR_BUTTON_SELECTOR)) {
+    if (btn.parentElement?.matches(SEARCH_SLOT_SELECTOR) === true) continue
+    btn.remove()
+    pruned = true
+  }
+  // A stray is a real 28px hover target, so it can own the live bubble —
+  // and a removed anchor never fires the mouseleave that would hide it.
+  if (pruned) hideTooltip()
+}
+
+/**
  * Mount the injected button into the search slot, immediately to the left
  * of the native search container, or refresh the enabled state of an
  * already-mounted one. Returns the button element, or null if the search
@@ -806,6 +921,13 @@ function syncButtonEnabledState(btn: HTMLButtonElement, sessionList: SessionList
  * four header icons (locate / search / view options / add workspace)
  * share the native spacing.
  *
+ * The walk is verified, not assumed: the container two levels up must be
+ * the `searchSlot` itself, or nothing is mounted. The collapsed rail paints
+ * a second search button of the same class and label one level shallower
+ * ({@link SEARCH_SLOT_SELECTOR}), and the header simply has no locate
+ * button while the sidebar is a rail — an inert tweak there, rather than an
+ * icon injected into a container React will not clean up for us.
+ *
  * `refresh` is the cheap path called from the observer: re-sync the existing
  * button's enabled state on every tick. The microtask coalesces a burst
  * of mutations into one re-sync.
@@ -814,6 +936,10 @@ function syncButtonEnabledState(btn: HTMLButtonElement, sessionList: SessionList
  * ({@link currentSessionId}); undefined simply means that fallback is skipped.
  */
 function mountButton(refresh: boolean = false, sessionList?: SessionListShape): HTMLButtonElement | null {
+  // Enforce the "a locate button lives in a searchSlot, and nowhere else"
+  // invariant before resolving anything, so strays are swept even on a tick
+  // where no anchor resolves at all (rail mode has no slot to find).
+  pruneStrayButtons()
   // Anchor: the structural class fragment first (no translation in the
   // path), the localized aria-label second — re-evaluated per call, so a
   // live locale switch re-resolves the fallback on the next observer tick.
@@ -822,8 +948,10 @@ function mountButton(refresh: boolean = false, sessionList?: SessionListShape): 
   const searchContainer = searchBtn.parentElement
   const slot = searchContainer?.parentElement
   if (searchContainer == null || slot == null) return null
+  // Not the wide section header — the collapsed rail's own search button.
+  if (!slot.matches(SEARCH_SLOT_SELECTOR)) return null
   // Idempotency: refresh an existing button in place instead of re-mounting.
-  const existing = slot.querySelector<HTMLButtonElement>('button.cst-locate-btn')
+  const existing = slot.querySelector<HTMLButtonElement>(OUR_BUTTON_SELECTOR)
   if (existing !== null) {
     if (refresh) syncButtonEnabledState(existing, sessionList)
     return existing
@@ -835,11 +963,37 @@ function mountButton(refresh: boolean = false, sessionList?: SessionListShape): 
 }
 
 /**
+ * HMR duplicate-setup guard, the pattern every JS-level tweak here uses
+ * (see `settings-nav-scroll`): a hot reload can run setup again before the
+ * previous effect's cleanup ran, so run the stale cleanup first and let two
+ * drivers never fight over one button.
+ *
+ * It is also this tweak's only external proof of life. The mount is
+ * deliberately silent when the host reshapes its header — the `searchSlot`
+ * assertion makes a mismatch mean "no button", not "a button in the wrong
+ * place" — and an `undefined` guard is what tells a reader that the tweak
+ * never mounted at all, as documented for `__cst_*_cleanup__` in README.md.
+ */
+const GLOBAL_KEY = '__cst_locate_current_session_cleanup__'
+function getGlobalCleanup(): (() => void) | undefined {
+  return (window as unknown as Record<string, unknown>)[GLOBAL_KEY] as (() => void) | undefined
+}
+function setGlobalCleanup(fn: (() => void) | undefined): void {
+  ;(window as unknown as Record<string, unknown>)[GLOBAL_KEY] = fn
+}
+
+/**
  * Setup the live tweak. Returns a disposer that removes the button and
  * the observer. Safe to call when the search button never appears — the
  * tweak then stays inert until the next observer tick finds one.
  */
 export function setupLocateCurrentSession(ctx: ClientContext): () => void {
+  const previous = getGlobalCleanup()
+  if (typeof previous === 'function') {
+    previous()
+    setGlobalCleanup(undefined)
+  }
+
   // Own stylesheet lives and dies with the tweak itself, so index.tsx can
   // register this setup like any plain injector.
   const removeStyles = injectLocateCurrentSessionStyles()
@@ -912,7 +1066,10 @@ export function setupLocateCurrentSession(ctx: ClientContext): () => void {
 
   // Watch for the search button to appear / be replaced (DSH rebuilds the
   // sidebar header on width toggle, workspace switch, and other view
-  // transitions). MutationObserver coalesces a burst of changes into one
+  // transitions). Collapsing the sidebar is the sharpest case: the whole
+  // `searchSlot` — our button inside it — is unmounted, and a fresh slot is
+  // mounted when it comes back, so the button is re-created rather than
+  // re-found. MutationObserver coalesces a burst of changes into one
   // microtask. We also listen for attribute changes so the enabled state
   // tracks the current `aria-selected` row as the user switches sessions
   // without DSH rebuilding the tree.
@@ -932,6 +1089,10 @@ export function setupLocateCurrentSession(ctx: ClientContext): () => void {
     })
   }
   const observer = new MutationObserver((records) => {
+    // Checked before the gate, and independently of it: a bubble anchored to
+    // a button the host just unmounted has to die with it, whether or not the
+    // batch is one this tweak otherwise cares about.
+    if (removedOurButton(records)) hideTooltip()
     // The gate names what this tweak actually reads: the sidebar rows (whose
     // aria-selected drives the button's enabled state), the search slot it
     // injects beside, the conversation header the session id comes from, and
@@ -942,9 +1103,12 @@ export function setupLocateCurrentSession(ctx: ClientContext): () => void {
   })
   observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-selected', 'aria-expanded'] })
 
-  return () => {
+  const cleanup = (): void => {
     if (disposed) return
     disposed = true
+    // Only clear the marker while it is still ours: a successor instance that
+    // already claimed the key must keep its own guard visible.
+    if (getGlobalCleanup() === cleanup) setGlobalCleanup(undefined)
     observer.disconnect()
     hideTooltip()
     removeStyles()
@@ -956,4 +1120,6 @@ export function setupLocateCurrentSession(ctx: ClientContext): () => void {
     }
     wired.clear()
   }
+  setGlobalCleanup(cleanup)
+  return cleanup
 }
