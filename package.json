@@ -12,7 +12,6 @@
     "style",
     "tweaks",
     "chat-ui",
-    "layout",
     "css",
     "column-width",
     "workspace",
@@ -51,10 +50,11 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && tsc -p tsconfig.client.json && node scripts/build-client.mjs",
+    "build": "node scripts/check-mirrors.mjs && tsc -p tsconfig.json && tsc -p tsconfig.client.json && node scripts/build-client.mjs",
     "prepublishOnly": "pnpm build",
-    "prepare": "tsc -p tsconfig.json && tsc -p tsconfig.client.json && node scripts/build-client.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.public.json"
+    "prepare": "pnpm build",
+    "typecheck": "node scripts/check-mirrors.mjs && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.public.json",
+    "verify:route": "node scripts/check-route-fence.mjs"
   },
   "license": "MIT",
   "dsh": {
