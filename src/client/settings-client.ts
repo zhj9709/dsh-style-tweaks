@@ -152,6 +152,8 @@ export class SettingsClient {
    *  be given up on can be taken off the screen instead of waiting for a
    *  snapshot that may never arrive. */
   private lastSnapshot: Snapshot | undefined = undefined
+  /** The in-flight `load`, so a second caller joins it instead of racing it. */
+  private loading: Promise<void> | null = null
   /** Chains that wire traffic: one request in flight at a time. */
   private tail: Promise<void> = Promise.resolve()
   /** Bumped whenever a queued write publishes the Host's answer for it. A
@@ -198,24 +200,34 @@ export class SettingsClient {
   }
 
   async load(): Promise<void> {
-    const generation = ++this.generation
-    const settled = this.settled
+    // One read at a time. The panel re-arms the loading state on the way in,
+    // which is what makes a retry possible at all — and that re-arm is itself a
+    // status change, so the panel's `status === 'loading'` effect guard fires
+    // again and would otherwise call straight back in here. Without this guard a
+    // single retry click sends two requests and throws the first one's answer
+    // away on the `generation` check below.
+    if (this.loading !== null) return this.loading
     // Re-arm on the way in, not only when already loading. This plugin restarts
     // on every profile-patch write, so "the route was not registered" is a
     // window a user can open Settings inside; without re-arming, `status` sticks
-    // at 'error' and the panel's retry guard (`status === 'loading'`) can never
-    // fire again. Republishing 'loading' does not re-trigger that guard — the
-    // effect depends on the status *value*, which does not change here — so
-    // there is no retry storm against a host that is genuinely down.
+    // at 'error' and the panel can never ask again. A host that is genuinely
+    // down does not retry by itself — the guard above swallows the duplicate
+    // call, and a failure publishes 'error', which the effect does not re-enter.
     if (this.state.value === undefined) this.publish({ ...this.state, status: 'loading' })
-    try {
-      const snapshot = await apiRequest<Snapshot>()
-      if (generation !== this.generation || settled !== this.settled) return
-      this.publishFrom(snapshot)
-    } catch (error) {
-      if (generation !== this.generation) return
-      this.publish({ ...this.state, status: 'error', error: error instanceof Error ? error.message : String(error) })
-    }
+    const run = (async () => {
+      const generation = ++this.generation
+      const settled = this.settled
+      try {
+        const snapshot = await apiRequest<Snapshot>()
+        if (generation !== this.generation || settled !== this.settled) return
+        this.publishFrom(snapshot)
+      } catch (error) {
+        if (generation !== this.generation) return
+        this.publish({ ...this.state, status: 'error', error: error instanceof Error ? error.message : String(error) })
+      }
+    })()
+    this.loading = run.finally(() => { this.loading = null })
+    return this.loading
   }
 
   /**
