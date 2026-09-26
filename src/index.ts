@@ -33,8 +33,18 @@ export const name = 'dsh-style-tweaks'
  */
 export { Config }
 
-/** Required services: the settings seam is the whole server-side surface. */
-export const inject = ['settings', 'web']
+/**
+ * Required services: the settings seam is the whole server-side surface.
+ *
+ * Deliberately NOT the `web` service (the host's search/fetch capability seam,
+ * `ctx.web` in `dsh-web`). Nothing here reads it, and requiring it would mean a
+ * host without search/fetch providers could not load the settings namespace at
+ * all — a capability this plugin does not have. The HTTP route is not covered by
+ * this list either: it attaches through its own optional
+ * `ctx.inject(['webServer'], …)` inside `installStyleTweaksWeb`, so a host with
+ * no webserver still gets the namespace and simply mounts no route.
+ */
+export const inject = ['settings']
 
 /**
  * The two settings-service shapes this plugin spans: `register` owned a

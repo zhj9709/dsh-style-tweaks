@@ -133,9 +133,14 @@ export async function writeStore(path: string, doc: StoreDoc): Promise<void> {
  * In-process write serialisation: every store mutation (seed included) rides
  * one promise chain, so concurrent requests in this host — multi-tab windows,
  * a GET seeding under a POST — cannot interleave read-modify-write. A prior
- * failure never poisons the chain. Cross-process races (a hand edit racing
- * the host) are covered by the revision CAS instead: the loser gets a 409 and
- * the client's existing retry recovers.
+ * failure never poisons the chain.
+ *
+ * **This does not reach across processes.** Two hosts sharing one profile
+ * directory (a Desktop app and a `dsh web` on the same profile) each hold their
+ * own chain, and the revision CAS does not close that either: it detects a write
+ * based on a *stale read*, so two processes that both read `revision: N` both
+ * pass it and both write `N+1`, last writer winning, and neither sees a 409.
+ * Closing it needs a cross-process file lock around read → merge → rename.
  * @param fn - Critical section; runs when the previous turn has settled.
  * @returns The section's result.
  */
