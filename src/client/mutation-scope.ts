@@ -33,6 +33,16 @@
  * missed update. So a batch that only *might* matter is let through, and the
  * `querySelector` for a descendant is skipped as soon as one node matches.
  *
+ * The one case it used to get wrong was a `characterData` record, whose target
+ * is a `Text` node: not an `Element`, so `closest` could not run, and the
+ * add/remove lists are empty for that record type — all three checks fell
+ * through and the batch was dropped. That is a false negative in the one
+ * direction this function promises never to fail, so a non-Element target now
+ * lets the record through. None of the current callers subscribe to
+ * `characterData` (`running-status` does, and it uses its own predicate), so
+ * this changes nothing observable today; it is here so the next caller that
+ * adds the option inherits the conservative reading rather than the bug.
+ *
  * @param records - The batch handed to a `MutationObserver` callback.
  * @param scope - A CSS selector list naming the region(s) the caller decorates.
  * @returns Whether the batch can affect that region.
@@ -40,7 +50,10 @@
 export function touchesScope(records: readonly MutationRecord[], scope: string): boolean {
   for (const record of records) {
     const target = record.target
-    if (target instanceof Element && target.closest(scope) !== null) return true
+    // Not `if (target instanceof Element && …)`: a `characterData` target is a
+    // Text node, and skipping it is exactly the silent drop described above.
+    if (!(target instanceof Element)) return true
+    if (target.closest(scope) !== null) return true
     if (nodesTouch(record.addedNodes, scope)) return true
     if (record.removedNodes.length > 0 && nodesTouch(record.removedNodes, scope)) return true
   }

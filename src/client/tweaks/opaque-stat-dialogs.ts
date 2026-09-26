@@ -102,9 +102,8 @@ export function injectOpaqueStatDialogsStyles(): () => void {
     style = document.createElement('style')
     style.dataset.tweak = 'cst'
     style.dataset.tweakCss = OPAQUE_STAT_DIALOGS_CSS_ID
-    style.textContent = OPAQUE_STAT_DIALOGS_CSS
     document.head.appendChild(style)
   }
-  const owner = claimStyleNode(style)
+  const owner = claimStyleNode(style, OPAQUE_STAT_DIALOGS_CSS)
   return () => { releaseStyleNode(style, owner) }
 }

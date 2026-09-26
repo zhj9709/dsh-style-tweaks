@@ -242,8 +242,7 @@ function installNavScrollStyles(): () => void {
     style.dataset.tweakCss = SETTINGS_NAV_SCROLL_CSS_ID
     document.head.appendChild(style)
   }
-  if (style.textContent !== SETTINGS_NAV_SCROLL_CSS) style.textContent = SETTINGS_NAV_SCROLL_CSS
-  const owner = claimStyleNode(style)
+  const owner = claimStyleNode(style, SETTINGS_NAV_SCROLL_CSS)
   return () => { releaseStyleNode(style, owner) }
 }
 

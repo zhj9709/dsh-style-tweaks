@@ -140,9 +140,8 @@ export function injectCodeBlockFlushTopStyles(): () => void {
     style = document.createElement('style')
     style.dataset.tweak = 'cst'
     style.dataset.tweakCss = CODE_BLOCK_FLUSH_TOP_CSS_ID
-    style.textContent = CODE_BLOCK_FLUSH_TOP_CSS
     document.head.appendChild(style)
   }
-  const owner = claimStyleNode(style)
+  const owner = claimStyleNode(style, CODE_BLOCK_FLUSH_TOP_CSS)
   return () => { releaseStyleNode(style, owner) }
 }

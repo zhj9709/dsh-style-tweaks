@@ -72,9 +72,8 @@ export function injectStableSessionTitleStyles(): () => void {
     style = document.createElement('style')
     style.dataset.tweak = 'cst'
     style.dataset.tweakCss = STABLE_SESSION_TITLE_CSS_ID
-    style.textContent = STABLE_SESSION_TITLE_CSS
     document.head.appendChild(style)
   }
-  const owner = claimStyleNode(style)
+  const owner = claimStyleNode(style, STABLE_SESSION_TITLE_CSS)
   return () => { releaseStyleNode(style, owner) }
 }

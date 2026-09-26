@@ -290,10 +290,9 @@ export function injectLocateCurrentSessionStyles(): () => void {
     style = document.createElement('style')
     style.dataset.tweak = 'cst'
     style.dataset.tweakCss = LOCATE_CSS_ID
-    style.textContent = LOCATE_CSS
     document.head.appendChild(style)
   }
-  const owner = claimStyleNode(style)
+  const owner = claimStyleNode(style, LOCATE_CSS)
   return () => { releaseStyleNode(style, owner) }
 }
 

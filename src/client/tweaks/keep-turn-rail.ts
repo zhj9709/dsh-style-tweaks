@@ -108,10 +108,9 @@ export function injectKeepTurnRailStyles(): () => void {
     style.dataset.tweakCss = KEEP_TURN_RAIL_CSS_ID
     document.head.appendChild(style)
   }
-  // TextContent is refreshed in place rather than only on creation: the HMR
-  // receiver can load a new bundle before this tweak's old <style> is torn
-  // down, and an existing node would otherwise retain the stale selector.
-  if (style.textContent !== KEEP_TURN_RAIL_CSS) style.textContent = KEEP_TURN_RAIL_CSS
-  const owner = claimStyleNode(style)
+  // The text is refreshed in place, not only on creation: an adopted node
+  // would otherwise retain the previous instance CSS. `claimStyleNode`
+  // does that write, so no call site has to remember it.
+  const owner = claimStyleNode(style, KEEP_TURN_RAIL_CSS)
   return () => { releaseStyleNode(style, owner) }
 }

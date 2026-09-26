@@ -147,10 +147,9 @@ function installBaseStyles(): () => void {
     style = document.createElement('style')
     style.dataset.plugin = 'dsh-style-tweaks'
     style.dataset.pluginCss = id
-    style.textContent = BASE_CSS
     document.head.appendChild(style)
   }
-  const owner = claimStyleNode(style)
+  const owner = claimStyleNode(style, BASE_CSS)
   return () => { releaseStyleNode(style, owner) }
 }
 

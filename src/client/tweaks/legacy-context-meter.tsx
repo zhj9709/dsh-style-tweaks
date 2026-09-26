@@ -347,10 +347,9 @@ function installMeterStyles(): () => void {
     style = document.createElement('style')
     style.dataset.plugin = 'dsh-style-tweaks'
     style.dataset.pluginCss = id
-    style.textContent = METER_CSS
     document.head.appendChild(style)
   }
-  const owner = claimStyleNode(style)
+  const owner = claimStyleNode(style, METER_CSS)
   return () => { releaseStyleNode(style, owner) }
 }
 

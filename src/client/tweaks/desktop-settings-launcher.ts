@@ -144,8 +144,7 @@ function installStyles(): Cleanup {
     style.dataset.tweakCss = STYLE_ID
     document.head.appendChild(style)
   }
-  if (style.textContent !== STYLE_TEXT) style.textContent = STYLE_TEXT
-  const owner = claimStyleNode(style)
+  const owner = claimStyleNode(style, STYLE_TEXT)
   return () => { releaseStyleNode(style, owner) }
 }
 

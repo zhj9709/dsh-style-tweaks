@@ -58,7 +58,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 // namespace key map this file reads through.
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import { claimStyleNode, releaseStyleNode } from '../style-node.ts'
+import { claimNode, claimStyleNode, releaseNode, releaseStyleNode } from '../style-node.ts'
 
 /** The host `chat` vocabulary, which still carries the whole tally group. */
 type ChatTranslate = TranslateNS<'chat'>
@@ -124,10 +124,11 @@ function tallyText(button: HTMLElement, t: ChatTranslate): string | null {
  * in place, or take it off once the turn has no counted work left to report.
  * @param button - One `data-turn-process` disclosure button.
  * @param t - Translate seat over the host `chat` vocabulary.
- * @param owned - Tallies this instance appended, so the disposer can take down
- *   exactly those and leave a successor instance's tallies alone.
+ * @param owned - Tally → the token stamped on it by whichever instance last
+ *   claimed it. The disposer removes a tally only while that token still stands,
+ *   which is what keeps a handover from deleting a successor's node.
  */
-function syncButton(button: HTMLElement, t: ChatTranslate, owned: Set<HTMLElement>): void {
+function syncButton(button: HTMLElement, t: ChatTranslate, owned: Map<HTMLElement, string>): void {
   const text = tallyText(button, t)
   // The host's own children are never touched: the tally is looked up as a
   // direct child, wherever React has since put the chevron around it.
@@ -136,23 +137,27 @@ function syncButton(button: HTMLElement, t: ChatTranslate, owned: Set<HTMLElemen
     // Only a tally this instance owns is ours to remove. A document-wide
     // `querySelectorAll('.cst-tp-counts')` sweep would delete a successor
     // instance's tallies too (same reasoning as `style-node.ts`).
-    if (existing !== null && owned.has(existing)) {
-      existing.remove()
+    const token = existing === null ? undefined : owned.get(existing)
+    if (existing !== null && token !== undefined) {
+      releaseNode(existing, token)
       owned.delete(existing)
     }
     return
   }
   if (existing !== null) {
-    // Adopt whatever is already there — a bundle reload can leave the previous
-    // instance's tally in place — so the disposer can take it down.
-    owned.add(existing)
+    // Adopt whatever is already there — a bundle handover can leave the previous
+    // instance's tally in place — and re-stamp it with THIS instance's token.
+    // Without the re-stamp the tally would still carry the old owner, so the old
+    // disposer (which runs second, after this instance adopted it) would remove
+    // the node this instance is now responsible for.
+    owned.set(existing, claimNode(existing))
     if (existing.textContent !== text) existing.textContent = text
     return
   }
   const tally = document.createElement('span')
   tally.className = TALLY_CLASS
   tally.textContent = text
-  owned.add(tally)
+  owned.set(tally, claimNode(tally))
   button.appendChild(tally)
 }
 
@@ -226,8 +231,10 @@ export function setupTurnProcessCounts(ctx: ClientContext): () => void {
    * The previous disposer swept the document for `.cst-tp-counts`, which is
    * only correct while one instance is alive: it also deleted nodes a newer
    * instance had just appended during the handover in `getGlobalCleanup()`.
+   * The value is the claim token `claimNode` stamped on that tally, so removal
+   * is identity-checked — see `style-node.ts` for why the no-op is the point.
    */
-  const owned = new Set<HTMLElement>()
+  const owned = new Map<HTMLElement, string>()
 
   const sync = (): void => {
     for (const button of document.querySelectorAll<HTMLElement>(PROCESS_BUTTON)) syncButton(button, t, owned)
@@ -272,7 +279,10 @@ export function setupTurnProcessCounts(ctx: ClientContext): () => void {
     disposed = true
     observer.disconnect()
     batch = []
-    for (const tally of owned) tally.remove()
+    // Identity-checked, not a blanket sweep: `syncButton` adopts leftovers, and
+    // a disposer that removed unconditionally would take down a tally a newer
+    // instance had already re-stamped as its own.
+    for (const [tally, token] of owned) releaseNode(tally, token)
     owned.clear()
     removeStyles()
     if (getGlobalCleanup() === cleanup) setGlobalCleanup(undefined)
@@ -305,9 +315,8 @@ function injectTurnProcessCountsStyles(): () => void {
     style = document.createElement('style')
     style.dataset.tweak = 'cst'
     style.dataset.tweakCss = TURN_PROCESS_COUNTS_CSS_ID
-    style.textContent = TURN_PROCESS_COUNTS_CSS
     document.head.appendChild(style)
   }
-  const owner = claimStyleNode(style)
+  const owner = claimStyleNode(style, TURN_PROCESS_COUNTS_CSS)
   return () => { releaseStyleNode(style, owner) }
 }

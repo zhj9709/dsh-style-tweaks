@@ -176,10 +176,9 @@ function installTurnTimePillStyles(): () => void {
     style = document.createElement('style')
     style.dataset.plugin = 'dsh-style-tweaks'
     style.dataset.pluginCss = id
-    style.textContent = TURN_TIME_PILL_CSS
     document.head.appendChild(style)
   }
-  const owner = claimStyleNode(style)
+  const owner = claimStyleNode(style, TURN_TIME_PILL_CSS)
   return () => { releaseStyleNode(style, owner) }
 }
 

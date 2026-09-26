@@ -50,9 +50,8 @@ export function injectHideSessionHoverActionsStyles(): () => void {
     style = document.createElement('style')
     style.dataset.tweak = 'cst'
     style.dataset.tweakCss = HIDE_SESSION_HOVER_ACTIONS_CSS_ID
-    style.textContent = HIDE_SESSION_HOVER_ACTIONS_CSS
     document.head.appendChild(style)
   }
-  const owner = claimStyleNode(style)
+  const owner = claimStyleNode(style, HIDE_SESSION_HOVER_ACTIONS_CSS)
   return () => { releaseStyleNode(style, owner) }
 }

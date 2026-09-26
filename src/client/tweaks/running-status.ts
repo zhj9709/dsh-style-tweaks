@@ -379,11 +379,14 @@ function touchesRunningControl(record: MutationRecord): boolean {
 }
 
 /**
- * HMR duplicate-setup guard. A hot reload can evaluate the new bundle before
- * the previous effect's cleanup runs; invoking the old owner first prevents two
- * observers and two injected rows from stacking. The v2 key is deliberately
- * separate from the original key: a late cleanup from the old bundle can clear
- * its own legacy slot without clearing this bundle's ownership marker.
+ * HMR duplicate-setup guard. Two live instances would each install an observer
+ * and each inject a row, so invoking the previous owner first is what keeps them
+ * from stacking. The receiver on 0.1.7-rc.2 happens to dispose before it
+ * re-applies (measured 2026-09-26; see `style-node.ts`), so this guard is not
+ * what makes hot reload correct there — it is what keeps the code correct if
+ * that order is ever the other one. The v2 key is deliberately separate from the
+ * original key: a late cleanup from an old bundle can clear its own legacy slot
+ * without clearing this bundle's ownership marker.
  */
 const GLOBAL_KEY = '__cst_running_status_cleanup_v2__'
 const LEGACY_GLOBAL_KEY = '__cst_running_status_cleanup__'

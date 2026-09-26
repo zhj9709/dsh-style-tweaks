@@ -249,10 +249,9 @@ function installIndicatorStyles(): () => void {
     style = document.createElement('style')
     style.dataset.tweak = 'cst'
     style.dataset.tweakCss = INDICATOR_CSS_ID
-    style.textContent = INDICATOR_CSS
     document.head.appendChild(style)
   }
-  const owner = claimStyleNode(style)
+  const owner = claimStyleNode(style, INDICATOR_CSS)
   return () => { releaseStyleNode(style, owner) }
 }
 

@@ -44,9 +44,8 @@ export function injectContextPillNoTooltipStyles(): () => void {
     style = document.createElement('style')
     style.dataset.tweak = 'cst'
     style.dataset.tweakCss = CONTEXT_PILL_NO_TOOLTIP_CSS_ID
-    style.textContent = CONTEXT_PILL_NO_TOOLTIP_CSS
     document.head.appendChild(style)
   }
-  const owner = claimStyleNode(style)
+  const owner = claimStyleNode(style, CONTEXT_PILL_NO_TOOLTIP_CSS)
   return () => { releaseStyleNode(style, owner) }
 }
