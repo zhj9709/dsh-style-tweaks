@@ -84,6 +84,20 @@ export const MIN_RIGHTBAR_WIDTH_PERCENT = 15
 /** Maximum configurable right Sidebar width percentage (= the host's 70% cap). */
 export const MAX_RIGHTBAR_WIDTH_PERCENT = 70
 
+// ── Sidebar session-count constants (mirror src/config.ts) ──────────────
+/** Default state of the sidebar session-count tweak (off: the host's 5-row fold stands). */
+export const DEFAULT_SIDEBAR_SESSION_COUNT_ENABLED = false
+/** Rows shown at rest once the tweak is on (= the host's own fold, the value the user moves away from). */
+export const DEFAULT_SIDEBAR_SESSION_INITIAL_COUNT = 5
+/** Rows one "show more" press adds (= the host's own step). */
+export const DEFAULT_SIDEBAR_SESSION_EXPAND_STEP = 5
+/** Minimum initial count (= the host's own fold). */
+export const MIN_SIDEBAR_SESSION_INITIAL_COUNT = 5
+/** Minimum expand step (= the host's own step). */
+export const MIN_SIDEBAR_SESSION_EXPAND_STEP = 5
+/** The stepper moves both counts one row per click. */
+export const STEP_SIDEBAR_SESSION_COUNT = 1
+
 // ── History page-size constants (mirror src/config.ts) ──────────────────
 /** Whether the custom history page size is active. */
 export const DEFAULT_HISTORY_PAGE_SIZE_ENABLED = false
@@ -161,6 +175,30 @@ export function resolveHistoryPageSize(value: number | undefined): number {
 }
 
 /**
+ * Normalize the sidebar's per-Workspace initial session count: floored at the
+ * host's own 5-row fold, uncapped above it.
+ * The only definition — the server normalises nothing (see the header).
+ */
+export function resolveSidebarSessionInitialCount(value: number | undefined): number {
+  if (typeof value === 'number') {
+    return Math.max(MIN_SIDEBAR_SESSION_INITIAL_COUNT, Math.round(value))
+  }
+  return DEFAULT_SIDEBAR_SESSION_INITIAL_COUNT
+}
+
+/**
+ * Normalize the rows one "show more" press adds: floored at 1 so the control
+ * can never become a no-op, uncapped above it.
+ * The only definition — the server normalises nothing (see the header).
+ */
+export function resolveSidebarSessionExpandStep(value: number | undefined): number {
+  if (typeof value === 'number') {
+    return Math.max(MIN_SIDEBAR_SESSION_EXPAND_STEP, Math.round(value))
+  }
+  return DEFAULT_SIDEBAR_SESSION_EXPAND_STEP
+}
+
+/**
  * Normalize the closed-Workspace id list: keep non-empty strings only.
  * The only definition — the server normalises nothing (see the header).
  */
@@ -202,6 +240,9 @@ export function resolveClientConfig(
     closedWorkspaces: resolveClosedWorkspaces(value?.closedWorkspaces),
     rightbarInitialWidth: resolveFlag(value?.rightbarInitialWidth, DEFAULT_RIGHTBAR_INITIAL_WIDTH),
     rightbarWidthPercent: resolveRightbarPercent(value?.rightbarWidthPercent),
+    sidebarSessionCountEnabled: resolveFlag(value?.sidebarSessionCountEnabled, DEFAULT_SIDEBAR_SESSION_COUNT_ENABLED),
+    sidebarSessionInitialCount: resolveSidebarSessionInitialCount(value?.sidebarSessionInitialCount),
+    sidebarSessionExpandStep: resolveSidebarSessionExpandStep(value?.sidebarSessionExpandStep),
     historyPageSizeEnabled: resolveFlag(value?.historyPageSizeEnabled, DEFAULT_HISTORY_PAGE_SIZE_ENABLED),
     historyPageSize: resolveHistoryPageSize(value?.historyPageSize),
     historyPageSizeColdStart: resolveFlag(value?.historyPageSizeColdStart, DEFAULT_HISTORY_PAGE_SIZE_COLD_START),

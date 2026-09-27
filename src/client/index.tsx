@@ -41,6 +41,7 @@ import { injectKeepTurnRailStyles } from './tweaks/keep-turn-rail.ts'
 import { injectCodeBlockFlushTopStyles } from './tweaks/code-block-flush-top.ts'
 import { setupProjectRunningIndicator } from './tweaks/project-running-indicator.ts'
 import { setupLocateCurrentSession } from './tweaks/locate-current-session.ts'
+import { setupSidebarSessionCount } from './tweaks/sidebar-session-count.ts'
 import { setupSettingsNavScroll } from './tweaks/settings-nav-scroll.ts'
 import { setupSidebarMiddleClickClose } from './tweaks/sidebar-middle-click-close.ts'
 import { setupLegacyStatsLine } from './tweaks/legacy-stats-line.tsx'
@@ -307,6 +308,16 @@ export function apply(ctx: ClientContext): void {
       // sidebar is open.
       if (resolved.rightbarInitialWidth) {
         cleanups.push(installRightbarInitialWidth(ctx, resolved.rightbarWidthPercent))
+      }
+      // Sidebar session row count: a sidebar feature with two numeric
+      // parameters, so it mounts here rather than in the TWEAKS loop (same
+      // shape as the width axis above). Re-mounted on every settings change,
+      // which is also how a new count reaches the lists already on screen.
+      if (resolved.sidebarSessionCountEnabled) {
+        cleanups.push(setupSidebarSessionCount(ctx, {
+          initialCount: resolved.sidebarSessionInitialCount,
+          expandStep: resolved.sidebarSessionExpandStep,
+        }))
       }
     }
     sync()

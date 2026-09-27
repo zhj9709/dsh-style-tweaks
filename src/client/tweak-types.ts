@@ -59,6 +59,12 @@ export interface ResolvedStyleTweaksConfig {
   rightbarInitialWidth: boolean
   /** Right Sidebar first-open width as a percentage of the session frame. */
   rightbarWidthPercent: number
+  /** Whether the sidebar's session list honours custom row counts. */
+  sidebarSessionCountEnabled: boolean
+  /** Session rows a Workspace shows before any expansion. */
+  sidebarSessionInitialCount: number
+  /** Session rows one "show more" press adds. */
+  sidebarSessionExpandStep: number
   /** Whether the custom history page size is active. */
   historyPageSizeEnabled: boolean
   /** History page size requested per pagination round (used while enabled). */

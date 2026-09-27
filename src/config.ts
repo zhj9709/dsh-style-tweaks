@@ -81,6 +81,26 @@ export interface StyleTweaksConfig {
    */
   historyPageSizeColdStart?: boolean
   /**
+   * Whether the sidebar's per-Workspace session list honours custom row counts
+   * instead of DSH's own folding. Off (default): the stock 5-row fold and its
+   * "+5 per expand" control stand untouched. On: a Workspace shows
+   * `sidebarSessionInitialCount` rows at rest, and each press of the
+   * "show more" control adds `sidebarSessionExpandStep` rows.
+   */
+  sidebarSessionCountEnabled?: boolean
+  /**
+   * Rows a Workspace's session list shows before any expansion, used only
+   * while `sidebarSessionCountEnabled` is on. Clamped to a minimum of 5 on
+   * read (below the stock fold the list would only ever grow). No upper bound.
+   */
+  sidebarSessionInitialCount?: number
+  /**
+   * Rows one press of the "show more" control adds, used only while
+   * `sidebarSessionCountEnabled` is on. Clamped to a minimum of 5 on read (the
+   * host's own step); the stepper moves it by 1. No upper bound.
+   */
+  sidebarSessionExpandStep?: number
+  /**
    * Own the right Sidebar's first-open width (host 0.1.5+). Off (default):
    * the host's own 45% default owns the axis. On: the plugin writes the
    * width once — the first time the right Sidebar opens during this page
@@ -438,6 +458,36 @@ export const MIN_RIGHTBAR_WIDTH_PERCENT = 15
 /** Maximum configurable percentage (= the host's `RIGHTBAR_MAX_RATIO`). */
 export const MAX_RIGHTBAR_WIDTH_PERCENT = 70
 
+// ── Sidebar session-count constants ─────────────────────────────────────
+/**
+ * Default: off — DSH's own 5-row fold owns the list until the user opts in,
+ * so the stock sidebar is what ships.
+ */
+export const DEFAULT_SIDEBAR_SESSION_COUNT_ENABLED = false
+/**
+ * Rows shown at rest once the control is on. 5 is the stock fold, so turning
+ * the control on with defaults reproduces DSH's own collapsed list exactly —
+ * the value the user is free to move away from.
+ */
+export const DEFAULT_SIDEBAR_SESSION_INITIAL_COUNT = 5
+/**
+ * Rows one "show more" press adds. 5 is the host's own step, so the plugin's
+ * control moves the list in the same rhythm the host's own button does.
+ */
+export const DEFAULT_SIDEBAR_SESSION_EXPAND_STEP = 5
+/**
+ * Floor for the initial count: DSH's own fold is 5, so a lower number would
+ * only ever hide rows the user can already see without the tweak.
+ */
+export const MIN_SIDEBAR_SESSION_INITIAL_COUNT = 5
+/**
+ * Floor for the expand step — the host's own step, so one press never reveals
+ * less than the host's own control would.
+ */
+export const MIN_SIDEBAR_SESSION_EXPAND_STEP = 5
+/** The stepper moves both counts by one row per click. */
+export const STEP_SIDEBAR_SESSION_COUNT = 1
+
 /**
  * Mark one Config field as live-editable. DSH 0.1.7+ reads the marker to
  * project the entry's own Config into a settings form and to accept writes
@@ -488,6 +538,9 @@ const FIELDS = {
   closedWorkspaces: z.array(z.string()).default([...DEFAULT_CLOSED_WORKSPACES]),
   rightbarInitialWidth: z.boolean().default(DEFAULT_RIGHTBAR_INITIAL_WIDTH),
   rightbarWidthPercent: z.number().min(MIN_RIGHTBAR_WIDTH_PERCENT).max(MAX_RIGHTBAR_WIDTH_PERCENT).default(DEFAULT_RIGHTBAR_WIDTH_PERCENT),
+  sidebarSessionCountEnabled: z.boolean().default(DEFAULT_SIDEBAR_SESSION_COUNT_ENABLED),
+  sidebarSessionInitialCount: z.number().min(MIN_SIDEBAR_SESSION_INITIAL_COUNT).default(DEFAULT_SIDEBAR_SESSION_INITIAL_COUNT),
+  sidebarSessionExpandStep: z.number().min(MIN_SIDEBAR_SESSION_EXPAND_STEP).default(DEFAULT_SIDEBAR_SESSION_EXPAND_STEP),
   historyPageSizeEnabled: z.boolean().default(DEFAULT_HISTORY_PAGE_SIZE_ENABLED),
   historyPageSize: z.number().min(MIN_HISTORY_PAGE_SIZE).max(MAX_HISTORY_PAGE_SIZE).default(DEFAULT_HISTORY_PAGE_SIZE),
   historyPageSizeColdStart: z.boolean().default(DEFAULT_HISTORY_PAGE_SIZE_COLD_START),
@@ -568,6 +621,12 @@ export interface ResolvedStyleTweaksConfig {
   rightbarInitialWidth: boolean
   /** Right Sidebar first-open width as a percentage of the session frame. */
   rightbarWidthPercent: number
+  /** Whether the sidebar's session list honours custom row counts. */
+  sidebarSessionCountEnabled: boolean
+  /** Session rows a Workspace shows before any expansion. */
+  sidebarSessionInitialCount: number
+  /** Session rows one "show more" press adds. */
+  sidebarSessionExpandStep: number
   /** Whether the custom history page size is active. */
   historyPageSizeEnabled: boolean
   /** History page size requested per pagination round (used while enabled). */
@@ -603,6 +662,9 @@ export function resolveConfig(config: StyleTweaksConfig = {}): ResolvedStyleTwea
     closedWorkspaces: resolveClosedWorkspaces(config.closedWorkspaces),
     rightbarInitialWidth: config.rightbarInitialWidth ?? DEFAULT_RIGHTBAR_INITIAL_WIDTH,
     rightbarWidthPercent: resolveRightbarPercent(config.rightbarWidthPercent),
+    sidebarSessionCountEnabled: config.sidebarSessionCountEnabled ?? DEFAULT_SIDEBAR_SESSION_COUNT_ENABLED,
+    sidebarSessionInitialCount: resolveSidebarSessionInitialCount(config.sidebarSessionInitialCount),
+    sidebarSessionExpandStep: resolveSidebarSessionExpandStep(config.sidebarSessionExpandStep),
     historyPageSizeEnabled: config.historyPageSizeEnabled ?? DEFAULT_HISTORY_PAGE_SIZE_ENABLED,
     historyPageSize: resolveHistoryPageSize(config.historyPageSize),
     historyPageSizeColdStart: config.historyPageSizeColdStart ?? DEFAULT_HISTORY_PAGE_SIZE_COLD_START,
@@ -640,6 +702,29 @@ export function resolveHistoryPageSize(value: number | undefined): number {
     return Math.min(MAX_HISTORY_PAGE_SIZE, Math.max(MIN_HISTORY_PAGE_SIZE, Math.round(value)))
   }
   return DEFAULT_HISTORY_PAGE_SIZE
+}
+
+/**
+ * Normalize the sidebar's per-Workspace initial session count. Floored at the
+ * host's own 5-row fold and intentionally uncapped: a Workspace with a long
+ * history is exactly the case this control exists for.
+ */
+export function resolveSidebarSessionInitialCount(value: number | undefined): number {
+  if (typeof value === 'number') {
+    return Math.max(MIN_SIDEBAR_SESSION_INITIAL_COUNT, Math.round(value))
+  }
+  return DEFAULT_SIDEBAR_SESSION_INITIAL_COUNT
+}
+
+/**
+ * Normalize the rows one "show more" press adds. Floored at 1 so the control
+ * can never become a no-op, and uncapped for the same reason as the count.
+ */
+export function resolveSidebarSessionExpandStep(value: number | undefined): number {
+  if (typeof value === 'number') {
+    return Math.max(MIN_SIDEBAR_SESSION_EXPAND_STEP, Math.round(value))
+  }
+  return DEFAULT_SIDEBAR_SESSION_EXPAND_STEP
 }
 
 /**

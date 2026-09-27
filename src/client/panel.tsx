@@ -14,7 +14,7 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 import type { LocaleKey, Translate } from './i18n.ts'
 import { SettingsClient } from './settings-client.ts'
 import { isDesktopRuntime, resolveValue } from './settings-value.ts'
-import { MIN_DIALOG_WIDTH, MAX_DIALOG_WIDTH, MIN_SIDE_MARGIN, MIN_RIGHTBAR_WIDTH_PERCENT, MAX_RIGHTBAR_WIDTH_PERCENT, MIN_HISTORY_PAGE_SIZE, MAX_HISTORY_PAGE_SIZE, STEP_HISTORY_PAGE_SIZE } from './tweak-config.ts'
+import { MIN_DIALOG_WIDTH, MAX_DIALOG_WIDTH, MIN_SIDE_MARGIN, MIN_RIGHTBAR_WIDTH_PERCENT, MAX_RIGHTBAR_WIDTH_PERCENT, MIN_HISTORY_PAGE_SIZE, MAX_HISTORY_PAGE_SIZE, STEP_HISTORY_PAGE_SIZE, MIN_SIDEBAR_SESSION_INITIAL_COUNT, MIN_SIDEBAR_SESSION_EXPAND_STEP, STEP_SIDEBAR_SESSION_COUNT } from './tweak-config.ts'
 import { TWEAKS, type TweakDescriptor } from './tweaks/registry.ts'
 import { closedWorkspaceEntries, restoreClosedWorkspace } from './tweaks/workspace-close.ts'
 
@@ -104,11 +104,15 @@ export function SettingsSection({ controller, t }: SettingsSectionProps) {
   const [marginDraft, setMarginDraft] = useState<string>(String(resolved.sideMargin))
   const [rightbarWidthDraft, setRightbarWidthDraft] = useState<string>(String(resolved.rightbarWidthPercent))
   const [historyPageSizeDraft, setHistoryPageSizeDraft] = useState<string>(String(resolved.historyPageSize))
+  const [sidebarSessionInitialCountDraft, setSidebarSessionInitialCountDraft] = useState<string>(String(resolved.sidebarSessionInitialCount))
+  const [sidebarSessionExpandStepDraft, setSidebarSessionExpandStepDraft] = useState<string>(String(resolved.sidebarSessionExpandStep))
 
   useEffect(() => { setWidthDraft(String(resolved.dialogWidth)) }, [resolved.dialogWidth])
   useEffect(() => { setMarginDraft(String(resolved.sideMargin)) }, [resolved.sideMargin])
   useEffect(() => { setRightbarWidthDraft(String(resolved.rightbarWidthPercent)) }, [resolved.rightbarWidthPercent])
   useEffect(() => { setHistoryPageSizeDraft(String(resolved.historyPageSize)) }, [resolved.historyPageSize])
+  useEffect(() => { setSidebarSessionInitialCountDraft(String(resolved.sidebarSessionInitialCount)) }, [resolved.sidebarSessionInitialCount])
+  useEffect(() => { setSidebarSessionExpandStepDraft(String(resolved.sidebarSessionExpandStep)) }, [resolved.sidebarSessionExpandStep])
 
   const commitDialogWidth = (raw: string): void => {
     setWidthDraft(raw)
@@ -204,6 +208,40 @@ export function SettingsSection({ controller, t }: SettingsSectionProps) {
 
   const setHistoryPageSizeColdStart = (value: boolean): void => {
     save('historyPageSizeColdStart', value)
+  }
+
+  /**
+   * Commit a typed sidebar count. The two counts have no upper bound, so only
+   * the floor and "is a number" are checked; anything else reverts to the
+   * stored value rather than writing a value the resolver would undo.
+   */
+  const commitSidebarCount = (
+    key: 'sidebarSessionInitialCount' | 'sidebarSessionExpandStep',
+    raw: string,
+    setDraft: (value: string) => void,
+    stored: number,
+    floor: number,
+  ): void => {
+    const parsed = Number(raw)
+    if (raw.trim() === '' || !Number.isFinite(parsed) || Math.round(parsed) < floor) {
+      setDraft(String(stored))
+      return
+    }
+    const clamped = Math.round(parsed)
+    setDraft(String(clamped))
+    save(key, clamped)
+  }
+
+  const stepSidebarCount = (
+    key: 'sidebarSessionInitialCount' | 'sidebarSessionExpandStep',
+    delta: number,
+    setDraft: (value: string) => void,
+    stored: number,
+    floor: number,
+  ): void => {
+    const next = Math.max(floor, stored + delta)
+    setDraft(String(next))
+    save(key, next)
   }
 
   const setTweak = (tweak: TweakDescriptor, value: boolean): void => {
@@ -422,6 +460,67 @@ export function SettingsSection({ controller, t }: SettingsSectionProps) {
                   <div className="cst-seg">
                     <button type="button" className={resolved.historyPageSizeColdStart ? 'cst-seg-active' : ''} disabled={!writable} onClick={() => { setHistoryPageSizeColdStart(true) }}>{t('tweakOn')}</button>
                     <button type="button" className={!resolved.historyPageSizeColdStart ? 'cst-seg-active' : ''} disabled={!writable} onClick={() => { setHistoryPageSizeColdStart(false) }}>{t('tweakOff')}</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : null}
+      </section>
+
+      <section className="cst-panel">
+        <div className="cst-section-label">{t('sectionSidebarList')}</div>
+        <div className="cst-field">
+          <div className="cst-field-top">
+            <span className="cst-label">{t('sidebarSessionCountEnabled')}<Hint text={t('sidebarSessionCountEnabledHint')} /></span>
+            <div className="cst-controls">
+              <div className="cst-seg">
+                <button type="button" className={resolved.sidebarSessionCountEnabled ? 'cst-seg-active' : ''} disabled={!writable} onClick={() => { save('sidebarSessionCountEnabled', true) }}>{t('tweakOn')}</button>
+                <button type="button" className={!resolved.sidebarSessionCountEnabled ? 'cst-seg-active' : ''} disabled={!writable} onClick={() => { save('sidebarSessionCountEnabled', false) }}>{t('tweakOff')}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        {resolved.sidebarSessionCountEnabled ? (
+          <>
+            <div className="cst-field">
+              <div className="cst-field-top">
+                <span className="cst-label">{t('sidebarSessionInitialCount')}<Hint text={t('sidebarSessionInitialCountHint')} /></span>
+                <div className="cst-controls">
+                  <div className="cst-stepper">
+                    <button type="button" aria-label="−" disabled={!writable || resolved.sidebarSessionInitialCount <= MIN_SIDEBAR_SESSION_INITIAL_COUNT} onClick={() => { stepSidebarCount('sidebarSessionInitialCount', -STEP_SIDEBAR_SESSION_COUNT, setSidebarSessionInitialCountDraft, resolved.sidebarSessionInitialCount, MIN_SIDEBAR_SESSION_INITIAL_COUNT) }}>−</button>
+                    <input
+                      type="number"
+                      min={MIN_SIDEBAR_SESSION_INITIAL_COUNT}
+                      step={STEP_SIDEBAR_SESSION_COUNT}
+                      value={sidebarSessionInitialCountDraft}
+                      disabled={!writable}
+                      onChange={(event) => { setSidebarSessionInitialCountDraft(event.target.value) }}
+                      onBlur={(event) => { commitSidebarCount('sidebarSessionInitialCount', event.target.value, setSidebarSessionInitialCountDraft, resolved.sidebarSessionInitialCount, MIN_SIDEBAR_SESSION_INITIAL_COUNT) }}
+                      onKeyDown={(event) => { if (event.key === 'Enter') commitSidebarCount('sidebarSessionInitialCount', (event.target as HTMLInputElement).value, setSidebarSessionInitialCountDraft, resolved.sidebarSessionInitialCount, MIN_SIDEBAR_SESSION_INITIAL_COUNT) }}
+                    />
+                    <button type="button" aria-label="+" disabled={!writable} onClick={() => { stepSidebarCount('sidebarSessionInitialCount', STEP_SIDEBAR_SESSION_COUNT, setSidebarSessionInitialCountDraft, resolved.sidebarSessionInitialCount, MIN_SIDEBAR_SESSION_INITIAL_COUNT) }}>+</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="cst-field">
+              <div className="cst-field-top">
+                <span className="cst-label">{t('sidebarSessionExpandStep')}<Hint text={t('sidebarSessionExpandStepHint')} /></span>
+                <div className="cst-controls">
+                  <div className="cst-stepper">
+                    <button type="button" aria-label="−" disabled={!writable || resolved.sidebarSessionExpandStep <= MIN_SIDEBAR_SESSION_EXPAND_STEP} onClick={() => { stepSidebarCount('sidebarSessionExpandStep', -STEP_SIDEBAR_SESSION_COUNT, setSidebarSessionExpandStepDraft, resolved.sidebarSessionExpandStep, MIN_SIDEBAR_SESSION_EXPAND_STEP) }}>−</button>
+                    <input
+                      type="number"
+                      min={MIN_SIDEBAR_SESSION_EXPAND_STEP}
+                      step={STEP_SIDEBAR_SESSION_COUNT}
+                      value={sidebarSessionExpandStepDraft}
+                      disabled={!writable}
+                      onChange={(event) => { setSidebarSessionExpandStepDraft(event.target.value) }}
+                      onBlur={(event) => { commitSidebarCount('sidebarSessionExpandStep', event.target.value, setSidebarSessionExpandStepDraft, resolved.sidebarSessionExpandStep, MIN_SIDEBAR_SESSION_EXPAND_STEP) }}
+                      onKeyDown={(event) => { if (event.key === 'Enter') commitSidebarCount('sidebarSessionExpandStep', (event.target as HTMLInputElement).value, setSidebarSessionExpandStepDraft, resolved.sidebarSessionExpandStep, MIN_SIDEBAR_SESSION_EXPAND_STEP) }}
+                    />
+                    <button type="button" aria-label="+" disabled={!writable} onClick={() => { stepSidebarCount('sidebarSessionExpandStep', STEP_SIDEBAR_SESSION_COUNT, setSidebarSessionExpandStepDraft, resolved.sidebarSessionExpandStep, MIN_SIDEBAR_SESSION_EXPAND_STEP) }}>+</button>
                   </div>
                 </div>
               </div>
