@@ -12,8 +12,9 @@ AGENTS.md
 .idea/
 .codegraph/
 .opencode/
-.zcode/
+.zcode*
 .dsh/
 .openspec/
 openspec/
 .agents/
+.playwright-mcp/
