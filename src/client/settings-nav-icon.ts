@@ -31,13 +31,37 @@
  *   • Dispose is exact — removing our node and clearing one inline style
  *     restores DSH's own glyph, with no need to reconstruct its markup.
  *   • The replacement reuses the original's class, so every host rule keeps
- *     working untouched: `.navIcon`'s flex sizing, the cell's `currentColor`
- *     inheritance (hover / active / theme all follow), and
- *     `ui-settings-general`'s own `.navList:has(> .navCell:nth-child(8))`
- *     rule that blanks trailing glyphs on short rails.
+ *     working untouched: `.navIcon`'s flex sizing and the cell's
+ *     `currentColor` inheritance (hover / active / theme all follow). The one
+ *     rule matching that class which is *not* DSH's belongs to
+ *     `@linxin666/dsh-web-all` — see the next section, which this module
+ *     answers with `SETTINGS_NAV_ICON_CSS`.
  *   • `display: none` takes the original out of the flex row, so the
  *     replacement occupies the same 16px slot and the label keeps its 8px
  *     gap — the rail's metrics are byte-identical to stock.
+ *
+ * ## Holding the slot against other plugins
+ *
+ * `@linxin666/dsh-web-all` ships unconditional rail CSS — no config field
+ * behind it — that matches only while the rail holds exactly eight cells and
+ * not nine:
+ *
+ *   .navList:has(> .navCell:nth-child(8)):not(:has(> .navCell:nth-child(9)))
+ *     > .navCell:nth-child(5..8) > .navIcon { display: none }
+ *   (same cell selector)::before { content: ""; mask: <four squares> }
+ *
+ * So rows 5–8 lose their glyph and a four-square substitute is painted over
+ * the slot by the *cell*, not by the icon. The replacement shares `.navIcon`
+ * and is therefore blanked with the rest, and suppressing the substitute takes
+ * a second rule — which is what `SETTINGS_NAV_ICON_CSS` supplies, keyed on
+ * `data-cst-nav-icon` (written by this module alone), so the other blanked
+ * cells keep whatever their owners decided and only this entry is claimed back.
+ *
+ * The rail reached exactly eight rows only once 0.2.0's composition gate
+ * denied the section-registering plugins (`dshmarket`, `dsh-cost-meter`,
+ * `dsh-ui-tweaks`); loaded, they stretch the rail past nine and neither rule
+ * matches. The pair is shipped unconditionally all the same — the row count is
+ * a property of whichever plugins happen to be installed, not of this one.
  *
  * ## Size and weight (matched to the gear it replaces)
  *
@@ -77,6 +101,7 @@
  */
 
 import { touchesScope } from './mutation-scope.ts'
+import { claimStyleNode, releaseStyleNode } from './style-node.ts'
 import { NAV_LIST_SELECTOR, NAV_LIST_WATCH_SELECTOR } from './tweaks/settings-nav-scroll.ts'
 
 /** The label span inside a nav cell. */
@@ -134,6 +159,41 @@ const PALETTE_INNER = `<g transform="${ICON_TRANSFORM}">`
   + '<circle cx="5.67" cy="5" r=".72" fill="currentColor"/>'
   + '<circle cx="4.33" cy="8.33" r=".72" fill="currentColor"/>'
   + '</g>'
+
+/** Stylesheet id; also the `data-tweak-css` key of the injected node. */
+export const SETTINGS_NAV_ICON_CSS_ID = 'cst-settings-nav-icon'
+
+/**
+ * The two declarations that keep this cell's glyph ours.
+ *
+ * `!important` is what makes the claim a claim: `@linxin666/dsh-web-all`'s
+ * blanker is a plain declaration behind a six-pseudo-class selector, so an
+ * important declaration on a one-attribute selector outranks it without having
+ * to model that selector here — and an important author rule also beats any
+ * inline `display` a script may set on the node. The cell rule targets the
+ * `::before` the substitute is drawn with, scoped through `:has(>` on the same
+ * attribute, so rows 5, 6 and 8 of an eight-cell rail keep their substitute.
+ */
+const SETTINGS_NAV_ICON_CSS = `
+svg[data-cst-nav-icon] { display: block !important; }
+[class*="_navCell"]:has(> svg[data-cst-nav-icon])::before { content: none !important; }
+`
+
+/**
+ * Install {@link SETTINGS_NAV_ICON_CSS} for as long as the caller lives.
+ * @returns The disposer that drops the stylesheet when the caller disposes.
+ */
+function injectSettingsNavIconStyles(): () => void {
+  let style = document.querySelector<HTMLStyleElement>(`style[data-tweak-css="${SETTINGS_NAV_ICON_CSS_ID}"]`)
+  if (style === null) {
+    style = document.createElement('style')
+    style.dataset.tweak = 'cst'
+    style.dataset.tweakCss = SETTINGS_NAV_ICON_CSS_ID
+    document.head.appendChild(style)
+  }
+  const owner = claimStyleNode(style, SETTINGS_NAV_ICON_CSS)
+  return () => { releaseStyleNode(style, owner) }
+}
 
 /**
  * HMR duplicate-setup guard (same pattern as the other DOM tweaks): a hot
@@ -234,6 +294,7 @@ export function setupSettingsNavIcon(label: () => string): () => void {
     })
   })
   observer.observe(document.body, { childList: true, subtree: true })
+  const removeStyles = injectSettingsNavIconStyles()
   swap()
 
   const cleanup = (): void => {
@@ -241,6 +302,7 @@ export function setupSettingsNavIcon(label: () => string): () => void {
     disposed = true
     observer.disconnect()
     restore()
+    removeStyles()
     // Identity-checked, like `running-status` / `workspace-close`: a late
     // cleanup from an older bundle instance must not clear the marker the
     // instance that replaced it just published.
