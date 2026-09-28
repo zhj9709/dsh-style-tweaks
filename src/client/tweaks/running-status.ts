@@ -24,13 +24,20 @@
  * tab/live-region target.
  *
  * The elapsed value is not hard-coded by language. The host label is matched
- * against the same `message.turnProcess.deepDivingFor` template used to render
- * it, with a private marker substituted for `{duration}`; the text between the
- * template's prefix and suffix supplies the numeric clock. The value is then
+ * against the same duration template it used to render the label —
+ * `message.turnProcess.deepDivingFor` through 0.1.7, `chat.deepDivingFor` from
+ * 0.2.0 — with a private marker substituted for `{duration}`; the text between
+ * the template's prefix and suffix supplies the numeric clock. The value is then
  * rendered through 0.1.6's padded duration format, so the original
  * fifteen-second gate and clock typography also survive a mid-turn reload. If
  * a companion plugin changes that template or the wording, the complete
  * customized host label is shown as one blue line instead.
+ *
+ * DSH 0.2.0 gives the running state back a host-owned tail (`RunningStatus`
+ * under `[data-chat-running]`, with its own shimmer and live clock) and renders
+ * the process disclosure only after the turn closes, so no running control
+ * exists there to match and this tweak stays inert — the host carries the
+ * presentation it was written to restore.
  *
  * Hosts through 0.1.6 already render their own tail and do not put the
  * accessibility announcement beside a process disclosure, so this tweak stays
@@ -228,6 +235,36 @@ function formatClockDuration(elapsedMs: number, t: ChatTranslate): string {
 }
 
 /**
+/**
+ * The running-label duration templates the host has shipped, newest first.
+ *
+ * Neither name exists on both supported lines: 0.2.0 renamed
+ * `message.turnProcess.deepDivingFor` to `chat.deepDivingFor`. The typed
+ * translate surface only carries the dictionary of the installed host, so the
+ * legacy name goes through the untyped call below, and whichever host answers
+ * is accepted only when it interpolates the marker exactly once.
+ */
+const DURATION_TEMPLATE_KEYS = ['chat.deepDivingFor', 'message.turnProcess.deepDivingFor'] as const
+
+/** The first candidate template that renders `marker` in place of `{duration}`. */
+function durationTemplate(t: ChatTranslate, marker: string): string | null {
+  const translate = t as unknown as (key: string, params: { duration: string }) => string
+  for (const key of DURATION_TEMPLATE_KEYS) {
+    let template: string
+    try {
+      template = translate(key, { duration: marker })
+    } catch {
+      // A host that rejects an unknown key outright is simply not that host.
+      continue
+    }
+    const markerAt = template.indexOf(marker)
+    if (markerAt < 0 || template.indexOf(marker, markerAt + 1) >= 0) continue
+    return template
+  }
+  return null
+}
+
+/**
  * Extract the live duration from the host's localized process label.
  *
  * Substituting a private-use marker into the same template the host used gives
@@ -235,10 +272,11 @@ function formatClockDuration(elapsedMs: number, t: ChatTranslate): string {
  * not last and avoids a zh/en string table inside the plugin.
  */
 function liveDuration(label: string, t: ChatTranslate): LiveDuration | null {
-  const marker = '\uE000'
-  const template = t('message.turnProcess.deepDivingFor', { duration: marker })
+  const marker = ''
+  const template = durationTemplate(t, marker)
+  if (template === null) return null
   const markerAt = template.indexOf(marker)
-  if (markerAt < 0 || template.indexOf(marker, markerAt + 1) >= 0) return null
+
 
   const prefix = template.slice(0, markerAt)
   const suffix = template.slice(markerAt + marker.length)
