@@ -565,6 +565,23 @@ function visibleTarget(
  * as a row that is not rendered, so the remembered value is never cleared on
  * that account: it is corrected the next time a selection IS seen in the group,
  * and it only ever holds the block a press could have produced anyway.
+ *
+ * ## What the stickiness costs, and why it stays
+ *
+ * The consequence is visible and intended: select the fifteenth session in
+ * Workspace A, switch to a session in B, and A's block is still twenty-one —
+ * `applyTrim` latched A's `TRIM_ATTR` to it and this is what keeps supplying
+ * it. Folding A and reopening brings it back at twenty-one as well, because a
+ * fold resets only the press-derived half. So the list is as wide as the user
+ * last had it, never narrower — the same promise the latched trim makes, and
+ * the same one the README states.
+ *
+ * What it cannot do is demand rows the Workspace does not have. A remembered
+ * block past the real total leaves `applyTrim`'s target above the last row, so
+ * the mark loop never runs out, every row is shown and nothing is hidden. Nor
+ * does the button's figure inherit it: `pendingCount` is `total − shown` with
+ * `total` read from the host, so the number on the button stays the honest one
+ * even when the target behind it is not.
  */
 function selectionNeed(
   group: Element,
@@ -589,9 +606,16 @@ function selectionNeed(
  *
  * The series is what the button walks (`clicker` adds exactly one step), so
  * keeping every block on it means a size on screen can always be reached,
- * described and restored by counting presses. The guards are for a
- * hand-edited store: the schema floors both numbers, but a `0` here would
- * otherwise divide by zero and hand the caller a NaN target.
+ * described and restored by counting presses.
+ *
+ * The contract, in the exact form it should be asserted in: for 7/7 the
+ * result is 7 for rows 1–7, 14 for rows 8–14 and 21 for rows 15–21; for 5/5
+ * it is 5 for rows 1–5 and 10 for rows 6–10. Two properties hold for every
+ * input — the result is never below the base, and it is always the base plus a
+ * whole number of strides, so no row count can produce a size the button
+ * could not have reached. The guards are for a hand-edited store: the schema
+ * floors both numbers, but a `0` here would otherwise divide by zero and hand
+ * the caller a NaN target.
  */
 function nextConfiguredSize(rows: number, config: SidebarSessionCountConfig): number {
   const base = Math.max(1, config.initialCount)
@@ -793,16 +817,27 @@ const PRESS_LAND_FRAMES = 10
  * Marking the rows this grow produces happens elsewhere: every mutation of a
  * group is trimmed by the mount's own observer, in the microtask it arrives in
  * (see `setupSidebarSessionCount`). This loop only presses and waits.
+ *
+ * ## Why `onLand` fires on every landing, not the first
+ *
+ * The callback is the early publish, and its gate — whether the Workspace's
+ * total is knowable yet — can be false on the first press: the host rewrites
+ * its "N more" label in the same commit that hands the rows over, so a read
+ * taken the frame after the rows land can still be looking at the previous
+ * press's label. Arming it behind a local `landedOnce` flag forfeited the
+ * publish for the rest of that grow, and the button then waited out the
+ * closing settle — reintroducing exactly the "control lags the list" timing
+ * this early publish exists to avoid. The callback carries its own `published`
+ * latch, so calling it on each landing costs one attribute read and stops.
  */
 async function growTo(
   group: Element,
   needed: number,
   config: SidebarSessionCountConfig,
-  onFirstLand: () => void,
+  onLand: () => void,
   budgetMs = 4000,
 ): Promise<void> {
   const deadline = performance.now() + budgetMs
-  let landedOnce = false
   for (;;) {
     if (performance.now() >= deadline) return
     const target = Math.max(needed, visibleTarget(group, sessionRows(group), trimOf(group, config), config))
@@ -838,10 +873,7 @@ async function growTo(
     // re-enters `growTo` for the remainder — which is why the sweep refuses to
     // record a short block as settled (see its own note).
     if (!landed) return
-    if (!landedOnce) {
-      landedOnce = true
-      onFirstLand()
-    }
+    onLand()
   }
 }
 
@@ -1032,6 +1064,12 @@ async function syncGroup(
       // rendered and unrendered does — so the value read before the grow is
       // still the honest one, and the figure comes from a single reading.
       lockedTotal = knownTotal
+      // The block, NOT the rows on screen: this figure is a promise about what
+      // the press is about to reach, which is the only useful thing to say
+      // while the grow is still running. The closing `publish` passes the rows
+      // actually shown instead, and the two agree whenever the grow lands —
+      // they can differ only when it fell short, which is the one case where a
+      // figure moving is the honest report that the grow did.
       const settledTarget = visibleTarget(group, sessionRows(group), trimOf(group, config), config)
       publish(group, onPress, settledTarget, lockedTotal)
     }
@@ -1067,6 +1105,9 @@ async function syncGroup(
   // label is not ours to read once growth is under way.
   const host = hostButton(group)
   if (host !== null) setStyle(host, 'display', 'none')
+  // The rows actually SHOWN, where the early publish used the block it was
+  // heading for — see `publishOnce` for why those two are not the same value
+  // and when they part.
   publish(group, onPress, visible, lockedTotal)
 }
 
@@ -1157,6 +1198,24 @@ export function setupSidebarSessionCount(
   }
 
   /**
+   * What a finished pass left behind — and with it, whether a sweep may be
+   * re-armed for this group.
+   *
+   * - `settled`: the fingerprint is recorded; the group is at rest.
+   * - `short`: the block is still short of what it should show and the retry
+   *   budget has room. Re-arm — this is the retry the mechanism exists for, and
+   *   it is what keeps a short block from freezing: leaving it unrecorded is
+   *   only half a fix, because a sweep nobody re-arms never comes back on its
+   *   own. The re-arm is BOUNDED by {@link SHORT_PASS_LIMIT}, so a host that
+   *   accepts presses without ever yielding rows costs a fixed number of
+   *   passes rather than one per mutation, forever.
+   * - `failed`: the pass threw, the mount is gone, or the group detached.
+   *   Never re-armed. A throwing pass re-invoked from its own re-arm would loop
+   *   without end, and the other two have no list left to fix.
+   */
+  type SettleOutcome = 'settled' | 'short' | 'failed'
+
+  /**
    * Record a finished pass as the group's settled state — unless the block is
    * still short, in which case the fingerprint is left unrecorded so the next
    * sweep retries the grow.
@@ -1177,21 +1236,20 @@ export function setupSidebarSessionCount(
    * After the limit the short block is recorded like any other — it self-heals
    * on the next real change to the group, and a press recomputes from the
    * on-screen count anyway.
-   * @returns Whether the fingerprint was recorded. Callers use it to decide
-   *   whether a sweep may be re-armed.
+   * @returns What the pass left, for the caller's re-arm decision.
    */
-  const recordSettled = (group: Element, ok: boolean): boolean => {
-    if (!ok || disposed || !group.isConnected) return false
+  const recordSettled = (group: Element, ok: boolean): SettleOutcome => {
+    if (!ok || disposed || !group.isConnected) return 'failed'
     if (blockIsShort(group)) {
       const attempts = (shortPasses.get(group) ?? 0) + 1
       if (attempts <= SHORT_PASS_LIMIT) {
         shortPasses.set(group, attempts)
-        return false
+        return 'short'
       }
     }
     shortPasses.delete(group)
     settled.set(group, stateSignature(group))
-    return true
+    return 'settled'
   }
 
   /**
@@ -1300,7 +1358,16 @@ export function setupSidebarSessionCount(
         // block is still short of its target, which this path can produce just
         // as the sweep's growing branch can (a press that ran out of budget
         // mid-grow). Both recording sites share one rule; see `recordSettled`.
-        recordSettled(group, true)
+        //
+        // This path is the one that can leave a short block WITHOUT any grow of
+        // its own — it is chosen for groups that render enough rows already, and
+        // `blockIsShort` measures the selection's block, which can sit above
+        // that count — so it is also the one that has to re-arm on `short`. A
+        // group that went quiet here would keep a fold short of its selection
+        // until the next unrelated mutation, which on a sidebar that has just
+        // gone still is not coming. Only `short` re-arms: a settled pass needs
+        // no sweep, and the `failed` case is handled by the catch above.
+        if (recordSettled(group, true) === 'short') schedule()
       } catch {
         // A pass that throws — most plausibly the host's own click handler
         // throwing back through `button.click()` — must not surface as an
@@ -1328,12 +1395,14 @@ export function setupSidebarSessionCount(
     // A listener that outlived its mount — see `syncGroup`'s note on the
     // re-created button — must be inert rather than run a dead instance's pass.
     if (disposed) return
-    // Grows from what is ON SCREEN. Since the selection's raise is latched
-    // back into the stored trim (see {@link applyTrim}) the two agree in the
-    // steady state, but the on-screen reading is still the honest base for the
-    // click that lands between a raise and its latch — a press recorded from a
-    // stored value the list already shows would find nothing to grow and
-    // "show more" would appear dead for that press.
+    // Grows from the block this group is LIVING at, not from a bare `trimOf`:
+    // `visibleTarget` re-measures the selected row on every call, so a press
+    // landing between a raise and its latch still steps from the raised block
+    // rather than from the lower stored value. Calling that "what is on screen"
+    // would be wrong — neither operand counts rendered rows, the block is a
+    // target — but the intent stands: a press measured against a size the list
+    // has already outgrown would find nothing to grow, and "show more" would
+    // look dead for that one click.
     const current = visibleTarget(group, sessionRows(group), trimOf(group, config), config)
     // Two states, decided by whether a press would reveal anything: more
     // raises the trim by a step and the grow in `syncGroup` follows it, and
@@ -1450,11 +1519,17 @@ export function setupSidebarSessionCount(
       }
       // The re-arm exists for a sweep that arrived while this group was busy
       // and skipped it: the finished state — the button label above all — has
-      // to be written by a sweep that can see the group idle. A pass that left
-      // the block short does not re-arm, because the next sweep has to be a
-      // real mutation rather than a chain this pass starts (see `recordSettled`
-      // for both halves of that rule).
-      if (recordSettled(group, ok)) schedule()
+      // to be written by a sweep that can see the group idle.
+      //
+      // A `short` outcome re-arms too, and that is the half this branch used
+      // to refuse. Not re-arming left the retry budget with nothing to spend
+      // it on: the fingerprint goes unrecorded precisely so a later sweep will
+      // take the group again, and on a sidebar that had just gone still no
+      // later sweep was coming — the group sat on a fold short of its own
+      // target, which is the freeze `recordSettled`'s note describes. The
+      // budget is what makes re-arming safe, and a `failed` pass is the one
+      // outcome that must not be re-armed (it would re-throw from here).
+      if (recordSettled(group, ok) !== 'failed') schedule()
       servePendingPress(group)
     }
   }
@@ -1531,7 +1606,30 @@ export function setupSidebarSessionCount(
         // moves the marker still has to move the fold, in the same frame.
         if (!trimmed.has(group)) {
           trimmed.add(group)
-          applyTrim(group, trimOf(group, config), config)
+          // Skipped when nothing a pass would read or write has moved since
+          // that group's last settled pass — the same test the sweep's own
+          // fingerprint check makes (see `sweep`). It is safe HERE for the
+          // reason it is safe there: the signature carries the row count, the
+          // last and first-HIDDEN row keys, the selected key, the trim, the
+          // remembered selection and the host's label, so a matching
+          // fingerprint means the marks on the rows are already the ones this
+          // call would write. The mutations that do reach a group — a live
+          // session's own row ticking over roughly once a second — carry a
+          // signature identical to the last pass, and without this test each of
+          // them bought a full `applyTrim` over the whole group (a
+          // `querySelectorAll` of every row, a second query for the selection,
+          // and an attribute write-check per row) inside a pre-paint microtask.
+          // A mutation that DOES change the fold — a row inserted, or
+          // `aria-selected` moving — moves the signature with it, so the trim
+          // still lands in the microtask the change arrived in.
+          //
+          // Only the trim is gated, never `pending` below: the plugin's own
+          // button is a DOM patch the host's re-render drops without touching
+          // any value the signature measures, and the sweep that rebuilds it
+          // has to keep being scheduled for that.
+          if (settled.get(group) !== stateSignature(group)) {
+            applyTrim(group, trimOf(group, config), config)
+          }
         }
         pending = true
         continue

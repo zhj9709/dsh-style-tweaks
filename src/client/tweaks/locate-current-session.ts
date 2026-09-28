@@ -679,14 +679,27 @@ function scrollableAncestor(element: HTMLElement): HTMLElement | null {
  * leaves the DOM, or when a newer locate takes the ticket.
  */
 function scrollRowIntoView(row: HTMLElement, animate: boolean): void {
-  const scroller = scrollableAncestor(row)
-  if (scroller === null || !animate) {
+  if (!animate) {
     // Land at once, in this very task: the switch's promise is no transition,
     // and there is nothing here that needs a frame's worth of settling — the
     // reveal that produced this row has already been applied by the trim
     // (instantly, when this branch is taken), and `scrollIntoView` forces the
     // layout it measures. Deferring it to a frame would only make "instant"
     // depend on the renderer still producing frames at all.
+    //
+    // Deliberately reached WITHOUT looking for a scroller first. `scrollable-
+    // Ancestor` reads `scrollHeight`/`clientHeight`, and each read forces a
+    // synchronous layout of the sidebar; on the DEFAULT setting (the switch is
+    // off) its answer is never used, because `scrollIntoView` finds the scroller
+    // itself. Asking first made every locate pay a layout flush for a value it
+    // threw away.
+    row.scrollIntoView({ block: 'center', behavior: 'instant' })
+    return
+  }
+  const scroller = scrollableAncestor(row)
+  if (scroller === null) {
+    // Nothing to drive: the row already fits, or no ancestor scrolls. Same
+    // landing as above, minus the wasted search.
     row.scrollIntoView({ block: 'center', behavior: 'instant' })
     return
   }
@@ -754,7 +767,29 @@ function performLocate(
   if (hit === null) return
   const { projectRow, group } = hit
 
-  /** The row we are after, or null while something still hides it. */
+  /**
+   * The row we are after, or null while something still hides it.
+   *
+   * "Hides it" means only "has not rendered it". A row found here may be in the
+   * DOM yet trimmed away by the session-count tweak (`display: none`), and
+   * `scrollIntoView` on a `display: none` element scrolls nothing — so with
+   * that tweak on and the row past its block, one locate can land without
+   * moving the list. It is left as a recorded gap rather than patched here,
+   * because the obvious patch is worse (see below).
+   *
+   * It is also self-correcting in the case that was actually observed: the
+   * count tweak raises the block to the next configured size as soon as the
+   * app marks the row `aria-selected`, and this locate's animated scroll
+   * re-reads its target every frame, so it rides the row down as the block
+   * grows. The instant branch has no such re-read, which is why the gap is
+   * narrowest on the default setting.
+   *
+   * Why skipping trimmed rows is NOT the fix: a press on the host's overflow
+   * only makes the HOST render more rows — it does not raise this plugin's
+   * block, which moves for the `aria-selected` mark alone. A loop that treated
+   * a trimmed row as "still hidden" would therefore press to its 64-press cap
+   * with nothing to show for it, turning one click into 320 rows of churn.
+   */
   const findRow = (): HTMLElement | null => activeSessionRow(sessionId) ?? findSessionRow(sessionId, group)
 
   /**
