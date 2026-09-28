@@ -602,18 +602,113 @@ function findProjectRowByGroupKey(workspaceId: string): { group: HTMLElement, pr
 }
 
 /**
- * Click a group's "expand remaining sessions" overflow button when DSH
+ * Overflow presses one locate may spend, one per frame, before giving up.
+ *
+ * The host's overflow hands over five rows per press (and jumps to
+ * "everything" once five or fewer are left), so a session past the first step
+ * is not rendered until several presses have gone through. Pressing once per
+ * locate is what left the button needing repeated clicks — the row appeared
+ * only after enough of them, five rows at a time. Every measured reveal lands
+ * a frame or two after the press that produces it, so this cap only bounds a
+ * host that keeps a pressable button without ever handing the row over: 64
+ * presses is 320 rows past the first step, still about a second at 60fps.
+ */
+const REVEAL_PRESSES = 64
+
+/**
+ * Press a group's "expand remaining sessions" overflow button when DSH
  * caps the group's rendered session rows (default 5) and hides the rest
  * behind it. The button carries `aria-expanded` matching its state and a
  * semantic `sessionOverflowButton` class fragment that survives the
- * per-build hash prefix. No-op when the button is absent or already
- * expanded.
+ * per-build hash prefix. Nothing is pressed when the button is absent or
+ * already expanded — an expanded button is the host's COLLAPSE, so pressing
+ * it would fold the list instead of extending it.
+ *
+ * @returns Whether a press was made, i.e. whether the group still has rows it
+ *   has not handed over.
  */
-function expandOverflow(group: HTMLElement): void {
+function pressOverflow(group: HTMLElement): boolean {
   const btn = group.querySelector<HTMLElement>(
     'button[class*="sessionOverflowButton"][aria-expanded="false"]',
   )
-  btn?.click()
+  if (btn === null) return false
+  btn.click()
+  return true
+}
+
+/**
+ * Duration of the locate's own scroll, in milliseconds — the animated half of
+ * the "expansion animation" switch (see {@link scrollRowIntoView}).
+ *
+ * The locate cannot use `scrollIntoView({ behavior: 'smooth' })`: on a machine
+ * that reports `prefers-reduced-motion: reduce` — this one does — Chromium
+ * makes that call an instant jump, and the jump is the flash the user reported.
+ * Measured 2026-09-27: a "smooth" scroll of the sidebar list went 0 → 568px in
+ * one frame, landing in the same frame as the row reveal, so the whole sidebar
+ * teleported. This loop is the locate's own, so it runs either way.
+ */
+const SCROLL_MS = 280
+
+/** Ticket of the newest scroll animation; older loops stop on their next frame. */
+let scrollTicket = 0
+
+/** The nearest ancestor that can scroll vertically, or null when none can. */
+function scrollableAncestor(element: HTMLElement): HTMLElement | null {
+  for (let node = element.parentElement; node !== null; node = node.parentElement) {
+    if (node.scrollHeight > node.clientHeight + 1) return node
+  }
+  return null
+}
+
+/**
+ * Scroll the row to the middle of its scroller.
+ *
+ * `animate` is the panel's "expansion animation" switch, threaded in from the
+ * mount. On, the scroll is driven here rather than by the browser (see
+ * {@link SCROLL_MS}); off, the row is put in place in a single frame with
+ * `behavior: 'instant'`, which is the switch's promise — no transition, and no
+ * dependence on the platform's motion preference, which is exactly what made
+ * the old `behavior: 'smooth'` call land instantly here and smoothly
+ * elsewhere.
+ *
+ * The animated target is re-read every frame, because the reveal that just put
+ * this row in the DOM is still growing: the session-count tweak eases the rows
+ * it un-hides back in over ~160ms, so the row keeps moving down while the
+ * scroll runs. A target captured once — all `scrollIntoView` can do — lands
+ * short by exactly that growth. The loop stops on the last frame, when the row
+ * leaves the DOM, or when a newer locate takes the ticket.
+ */
+function scrollRowIntoView(row: HTMLElement, animate: boolean): void {
+  const scroller = scrollableAncestor(row)
+  if (scroller === null || !animate) {
+    // Land at once, in this very task: the switch's promise is no transition,
+    // and there is nothing here that needs a frame's worth of settling — the
+    // reveal that produced this row has already been applied by the trim
+    // (instantly, when this branch is taken), and `scrollIntoView` forces the
+    // layout it measures. Deferring it to a frame would only make "instant"
+    // depend on the renderer still producing frames at all.
+    row.scrollIntoView({ block: 'center', behavior: 'instant' })
+    return
+  }
+  scrollTicket += 1
+  const ticket = scrollTicket
+  const start = scroller.scrollTop
+  const startedAt = performance.now()
+  const step = (): void => {
+    if (!row.isConnected || ticket !== scrollTicket) return
+    const box = scroller.getBoundingClientRect()
+    const rect = row.getBoundingClientRect()
+    const max = scroller.scrollHeight - scroller.clientHeight
+    const target = Math.max(
+      0,
+      Math.min(max, scroller.scrollTop + (rect.top - box.top) - (scroller.clientHeight - rect.height) / 2),
+    )
+    const progress = Math.min(1, (performance.now() - startedAt) / SCROLL_MS)
+    const eased = 1 - (1 - progress) ** 3
+    scroller.scrollTop = start + (target - start) * eased
+    if (progress < 1) window.requestAnimationFrame(step)
+  }
+  window.requestAnimationFrame(step)
 }
 
 /**
@@ -627,19 +722,18 @@ function expandOverflow(group: HTMLElement): void {
  *   3. Slow path: resolve the session's workspace from the app stores, find
  *      that workspace's projectRow in the sidebar and click it open, so DSH
  *      mounts the group's session rows on the next render.
- *   4. Scroll the row into view, opening the group's overflow first when the
- *      group caps its rows and the current session sits behind it. One rAF is
- *      enough for the click's re-render; we then scroll what it produced.
+ *   4. Scroll the row into view, pressing the group's overflow once per frame
+ *      while the group caps its rows and the current session is still behind
+ *      them, then scrolling whatever the last press produced.
  */
 function performLocate(
-  sessionList?: SessionListShape,
-  workspaceList?: WorkspaceListShape,
+  sessionList: SessionListShape | undefined,
+  workspaceList: WorkspaceListShape | undefined,
+  animate: boolean,
 ): void {
   const sessionId = currentSessionId(sessionList)
   if (sessionId === null) return
-  const scroll = (row: HTMLElement): void => {
-    row.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  }
+  const scroll = (row: HTMLElement): void => { scrollRowIntoView(row, animate) }
 
   // Fast path: the row is mounted, so the selection marker finds it.
   const mounted = activeSessionRow(sessionId)
@@ -664,22 +758,29 @@ function performLocate(
   const findRow = (): HTMLElement | null => activeSessionRow(sessionId) ?? findSessionRow(sessionId, group)
 
   /**
-   * Scroll the row into view, clicking the group's "show more" overflow open
-   * first when the row is capped out of the DOM. The click re-renders
-   * synchronously, so one rAF (which runs after that paint) is enough to see
-   * what it produced.
+   * Press the group's "show more" overflow until the row exists, then scroll
+   * it into view.
+   *
+   * One press per press of this button was the bug: the host hands over five
+   * rows at a time, so a session past the first step stayed unrendered and the
+   * user had to click locate again and again, watching the list grow five rows
+   * per click. A press re-renders synchronously, so one rAF (which runs after
+   * that paint) is enough to see what it produced — the loop just keeps
+   * pressing while the row is missing and the group still offers rows.
    */
   const revealAndScroll = (): void => {
-    const row = findRow()
-    if (row !== null) {
-      scroll(row)
-      return
+    let presses = 0
+    const attempt = (): void => {
+      const row = findRow()
+      if (row !== null) {
+        scroll(row)
+        return
+      }
+      if (presses >= REVEAL_PRESSES || !pressOverflow(group)) return
+      presses += 1
+      requestAnimationFrame(attempt)
     }
-    expandOverflow(group)
-    requestAnimationFrame(() => {
-      const late = findRow()
-      if (late !== null) scroll(late)
-    })
+    attempt()
   }
 
   if (projectRow.getAttribute('aria-expanded') === 'false') {
@@ -689,7 +790,7 @@ function performLocate(
     return
   }
   // Workspace already open: scan its group by id, and fall through to the
-  // overflow pass when the row is behind the group's row cap.
+  // overflow presses when the row is behind the group's row cap.
   const row = findSessionRow(sessionId, group)
   if (row !== null) scroll(row)
   else revealAndScroll()
@@ -986,8 +1087,13 @@ function setGlobalCleanup(fn: (() => void) | undefined): void {
  * Setup the live tweak. Returns a disposer that removes the button and
  * the observer. Safe to call when the search button never appears — the
  * tweak then stays inert until the next observer tick finds one.
+ *
+ * `animateScroll` is the "expansion animation" switch from the Sidebar session
+ * list section, captured at mount (index.tsx re-mounts every tweak on any
+ * settings change, so the capture cannot go stale). It gates only this tweak's
+ * scroll; DSH's own row animations are not ours to gate.
  */
-export function setupLocateCurrentSession(ctx: ClientContext): () => void {
+export function setupLocateCurrentSession(ctx: ClientContext, animateScroll: boolean): () => void {
   const previous = getGlobalCleanup()
   if (typeof previous === 'function') {
     previous()
@@ -1041,7 +1147,7 @@ export function setupLocateCurrentSession(ctx: ClientContext): () => void {
   const onClick = (event: MouseEvent): void => {
     event.preventDefault()
     event.stopPropagation()
-    performLocate(sessionList, workspaceList)
+    performLocate(sessionList, workspaceList, animateScroll)
   }
 
   /** Buttons this instance wired; the disposer takes down only its own. */

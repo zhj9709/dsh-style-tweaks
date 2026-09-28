@@ -101,6 +101,23 @@ export interface StyleTweaksConfig {
    */
   sidebarSessionExpandStep?: number
   /**
+   * Animate the sidebar's reveals instead of snapping them. Off (default, at
+   * the user's request): a reveal lands in a single frame, which is what the
+   * pre-animation build did and the plainest reading of "no animation". On:
+   * the rows a "show more" press, an opened session, or the locate button
+   * brings back fade and grow in over 160ms, and the locate button's own
+   * scroll glides to its row over 280ms instead of jumping. The reveal half is
+   * read only while `sidebarSessionCountEnabled` is on (that is when the tweak
+   * that reveals rows is mounted); the scroll half also governs the locate
+   * button on its own, and its value is kept while the count feature is off.
+   * The animations exist because a host that reports
+   * `prefers-reduced-motion: reduce` (this machine does) skips its own row
+   * fades and turns `scrollIntoView({ behavior: 'smooth' })` into an instant
+   * jump, so without them the reveal and the scroll teleport in one frame —
+   * but that is a preference, not a defect, so the plugin does not force it.
+   */
+  sidebarSessionExpandAnimation?: boolean
+  /**
    * Own the right Sidebar's first-open width (host 0.1.5+). Off (default):
    * the host's own 45% default owns the axis. On: the plugin writes the
    * width once — the first time the right Sidebar opens during this page
@@ -487,6 +504,12 @@ export const MIN_SIDEBAR_SESSION_INITIAL_COUNT = 5
 export const MIN_SIDEBAR_SESSION_EXPAND_STEP = 5
 /** The stepper moves both counts by one row per click. */
 export const STEP_SIDEBAR_SESSION_COUNT = 1
+/**
+ * Default: off — "no animation" is what the list did before the ease existed,
+ * and what a reader of the switch expects when it is off; the animations are
+ * the opt-in (see the field's doc).
+ */
+export const DEFAULT_SIDEBAR_SESSION_EXPAND_ANIMATION = false
 
 /**
  * Mark one Config field as live-editable. DSH 0.1.7+ reads the marker to
@@ -541,6 +564,7 @@ const FIELDS = {
   sidebarSessionCountEnabled: z.boolean().default(DEFAULT_SIDEBAR_SESSION_COUNT_ENABLED),
   sidebarSessionInitialCount: z.number().min(MIN_SIDEBAR_SESSION_INITIAL_COUNT).default(DEFAULT_SIDEBAR_SESSION_INITIAL_COUNT),
   sidebarSessionExpandStep: z.number().min(MIN_SIDEBAR_SESSION_EXPAND_STEP).default(DEFAULT_SIDEBAR_SESSION_EXPAND_STEP),
+  sidebarSessionExpandAnimation: z.boolean().default(DEFAULT_SIDEBAR_SESSION_EXPAND_ANIMATION),
   historyPageSizeEnabled: z.boolean().default(DEFAULT_HISTORY_PAGE_SIZE_ENABLED),
   historyPageSize: z.number().min(MIN_HISTORY_PAGE_SIZE).max(MAX_HISTORY_PAGE_SIZE).default(DEFAULT_HISTORY_PAGE_SIZE),
   historyPageSizeColdStart: z.boolean().default(DEFAULT_HISTORY_PAGE_SIZE_COLD_START),
@@ -627,6 +651,8 @@ export interface ResolvedStyleTweaksConfig {
   sidebarSessionInitialCount: number
   /** Session rows one "show more" press adds. */
   sidebarSessionExpandStep: number
+  /** Whether reveals and the locate scroll animate instead of landing at once. */
+  sidebarSessionExpandAnimation: boolean
   /** Whether the custom history page size is active. */
   historyPageSizeEnabled: boolean
   /** History page size requested per pagination round (used while enabled). */
@@ -665,6 +691,7 @@ export function resolveConfig(config: StyleTweaksConfig = {}): ResolvedStyleTwea
     sidebarSessionCountEnabled: config.sidebarSessionCountEnabled ?? DEFAULT_SIDEBAR_SESSION_COUNT_ENABLED,
     sidebarSessionInitialCount: resolveSidebarSessionInitialCount(config.sidebarSessionInitialCount),
     sidebarSessionExpandStep: resolveSidebarSessionExpandStep(config.sidebarSessionExpandStep),
+    sidebarSessionExpandAnimation: config.sidebarSessionExpandAnimation ?? DEFAULT_SIDEBAR_SESSION_EXPAND_ANIMATION,
     historyPageSizeEnabled: config.historyPageSizeEnabled ?? DEFAULT_HISTORY_PAGE_SIZE_ENABLED,
     historyPageSize: resolveHistoryPageSize(config.historyPageSize),
     historyPageSizeColdStart: config.historyPageSizeColdStart ?? DEFAULT_HISTORY_PAGE_SIZE_COLD_START,

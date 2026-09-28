@@ -76,12 +76,34 @@
  *
  * ## What the tweak does not do
  *
- * It never hides a selected row. Opening a session — including opening one
- * found through the host's own search, which reveals the row and scrolls to it
- * — marks that row `aria-selected="true"`, and the trim always yields to it. A
- * row the host asked to scroll to but the user is not in is not covered; the
- * host's reveal lifts the group's limit to "all" on its own, which leaves the
- * row rendered, and the trim is re-applied on the next tick.
+ * It never hides the rows above a selected one. Opening a session — including
+ * opening one found through the host's own search, or one the locate button
+ * scrolled to, both of which make the host render the row first — marks that
+ * row `aria-selected="true"`, and the trim then holds back only the rows BELOW
+ * it: the selected session is drawn where it really sits in the Workspace, not
+ * directly under the fold. A row the host asked to scroll to but the user is
+ * not in is not covered; the host's reveal lifts the group's limit to "all" on
+ * its own, which leaves the row rendered, and the trim is re-applied on the
+ * next tick.
+ *
+ * The block that rule opens is the next CONFIGURED size — `initial + k × step`
+ * — and it is LATCHED (see `visibleTarget` and `applyTrim`), so it survives
+ * both the selection moving on and a fold/unfold cycle: a group whose ninth
+ * session was selected shows fourteen rows, keeps fourteen when the user
+ * clicks the second one, and comes back as fourteen after the Workspace is
+ * folded and reopened, instead of snapping to a nine-row block no press could
+ * have produced. The block shrinks on the 收起 press, and folding the Workspace
+ * resets the PRESSES that built it while keeping the part the selection needs
+ * (`SELECTION_ATTR`) — see the sweep's note for why those two halves have to be
+ * treated differently.
+ *
+ * A SETTINGS change is not a fold. Every save re-mounts this tweak, and the
+ * latches live on the host's own group elements, so the mount that follows
+ * reads the width the list already had and leaves it alone: an expanded
+ * Workspace stays expanded while the user tunes a count, and the new counts
+ * reach the lists nobody had opened (they carry no latch, so `trimOf` falls
+ * back to the configured initial count). Only switching the feature OFF forgets
+ * the latches — see `resetSidebarSessionCountLayout`.
  *
  * ## Stability of the anchors
  *
@@ -121,7 +143,7 @@ const SESSION_ROW_SELECTOR = '[data-row-key^="session:"]'
 const OVERFLOW_BUTTON_SELECTOR = '[data-row-key^="overflow:"]'
 /** The scrolling list the rows live in. */
 const LIST_SELECTOR = '[class*="list"][role="tree"]'
-/** The selected session row, which the trim always yields to. */
+/** The selected session row, whose whole prefix the trim keeps visible. */
 const SELECTED_ROW_SELECTOR = '[data-row-key^="session:"][aria-selected="true"]'
 
 /**
@@ -145,8 +167,23 @@ ${OVERFLOW_BUTTON_SELECTOR} { display: none !important; }
 type Translate = (key: string, params?: Record<string, string | number>) => string
 let tWorkspace: Translate | undefined
 
-/** Per-group trim target, kept on the element so a React re-render cannot lose it. */
+/**
+ * Per-group trim target, kept on the element so a React re-render cannot lose
+ * it. It holds the rows the group shows, which is the value a press moves and
+ * also the value a deep selection latches the block up to (see `applyTrim`).
+ */
 const TRIM_ATTR = 'data-cst-sid-trim'
+/**
+ * The block the selected session needs, in configured sizes, as last measured
+ * while its row was on screen (see {@link selectionNeed}).
+ *
+ * This is the half of a block that survives the Workspace being folded: a fold
+ * drops the trim (the list comes back at the configured count, which is what
+ * folding means) but keeps this, because the host reopens a folded group at its
+ * own five-row limit — the selected row is then not in the DOM, and a
+ * requirement that is forgotten there can never be measured again.
+ */
+const SELECTION_ATTR = 'data-cst-sid-selection'
 /**
  * Marks a group whose user pressed the plugin's button at least once.
  *
@@ -170,6 +207,26 @@ export interface SidebarSessionCountConfig {
   readonly initialCount: number
   /** Rows one press of the plugin's button adds. */
   readonly expandStep: number
+  /**
+   * Whether a reveal eases in instead of landing in the same frame (the
+   * panel's "expansion animation" switch). Off restores the instant landing
+   * the tweak had before the ease existed.
+   *
+   * Both readings are deliberate. The ease is animated because on a machine
+   * that reports `prefers-reduced-motion: reduce` — this one does — nothing
+   * else animates a reveal: the host's own row fades bail out on that media
+   * query, and `display: none` has no transition. Measured 2026-09-27 on the
+   * locate path: the revealed block went from seven rows to twenty-one in ONE
+   * frame (with the locate's scroll jumping 0 → 568px in the same frame),
+   * which is what the user reported as "列表还是会闪". The HIDE direction
+   * stays instant whatever this says, and that asymmetry is the point: a row
+   * hidden because it is beyond the fold must never be presented at all, so
+   * its mark has to land in the same microtask as the render that produced it
+   * (see the mount observer), while a revealed row was on screen a moment ago
+   * and easing it back is the difference between a growth the eye can follow
+   * and a flash.
+   */
+  readonly animate: boolean
 }
 
 /**
@@ -265,10 +322,8 @@ function canGrow(group: Element): boolean {
 
 /** Rows the trim is currently hiding, i.e. what a "show more" press reveals.
  *
- * Counted from the markers rather than as `rendered - trim`: the selected row
- * is never hidden and may sit past the target, so the two can differ, and the
- * button's number is the one the user acts on.
- */
+ * Read off the markers rather than recomputed from the target: the marks are
+ * what the user sees, and what the settle's fingerprint compares. */
 function remainingRows(group: Element): number {
   return sessionRows(group).filter(row => row.hasAttribute(HIDDEN_ATTR)).length
 }
@@ -290,6 +345,29 @@ function hostNotRendered(group: Element): number {
   const match = hostButton(group)?.textContent?.match(/\d+/u)
   if (match === null || match === undefined) return 0
   return Number(match[0])
+}
+
+/**
+ * Whether the Workspace's session total is readable right now.
+ *
+ * Two states qualify, and they are complements: the host's button carries an
+ * "N more sessions" figure (the count of sessions above its own limit), or the
+ * host reports that it is showing everything — in which case the total is
+ * simply what it has rendered. Only the third state has nothing to say: a label
+ * that has not painted yet, where a figure published would be a guess.
+ *
+ * The second state needs its own evidence, because the host's flag is derived
+ * from its LIMIT while the rows it has committed can lag behind it (see
+ * `growTo`): a cached total that covers the rendered rows is what separates
+ * "everything really is on screen" from "the flag is ahead of the DOM". Without
+ * that, the honest reading is unknown — and unknown means the caller publishes
+ * nothing early rather than a figure the next render would contradict.
+ */
+function totalIsKnowable(group: Element): boolean {
+  if (hostNotRendered(group) > 0) return true
+  if (hostButton(group)?.getAttribute('aria-expanded') !== 'true') return false
+  const cached = Number(group.getAttribute(TOTAL_ATTR))
+  return Number.isFinite(cached) && cached > 0 && cached >= sessionRows(group).length
 }
 
 /**
@@ -365,7 +443,7 @@ function hasMore(group: Element): boolean {
  * hidden marks ride along with them, and a count-only fingerprint would call
  * the result settled while the marks sat on the wrong rows — hence the row
  * identity at the tail (`lastKey`, `firstHiddenKey`). The selected row is
- * included for the same reason: the trim yields to it.
+ * included for the same reason: the visible block is measured up to it.
  */
 function stateSignature(group: Element): string {
   const rows = sessionRows(group)
@@ -387,6 +465,7 @@ function stateSignature(group: Element): string {
     last?.getAttribute('data-row-key') ?? '',
     selected?.getAttribute('data-row-key') ?? '',
     group.getAttribute(TRIM_ATTR) ?? '',
+    group.getAttribute(SELECTION_ATTR) ?? '',
     group.hasAttribute(TOUCHED_ATTR) ? 'touched' : '',
     group.getAttribute(TOTAL_ATTR) ?? '',
     hostLabel(group),
@@ -422,32 +501,189 @@ function setStyle(node: HTMLElement, property: 'display', value: string): void {
 }
 
 /**
+ * The block a group keeps on screen: the trim, raised so that every row
+ * rendered ABOVE the selected one stays visible.
+ *
+ * The trim never leaves a hole above the selected row. That is a rule about
+ * the row's POSITION, not about sparing the session the user is in: keeping
+ * only the selected row visible while hiding the rows between it and the trim
+ * draws it directly under row `trim`, so a session that is 12th in its
+ * Workspace is painted as the 8th row of a seven-row fold — and it slides back
+ * to 12th the moment a press fills the gap in. Both locating paths hit that,
+ * because both work by making the host render the row and then leave the
+ * layout to this trim: the host's own reveal (a Session opened from search,
+ * whose limit lifts to "all") and the locate button (which presses the
+ * overflow until the row exists). Measured 2026-09-27 with the target below
+ * the selected row: hidden marks on [1, 3..9] of ten rows, `shown` published
+ * as 2, and the selected row drawn second while it was the third.
+ *
+ * The raise lands on the next CONFIGURED size (see {@link nextConfiguredSize}):
+ * the block a press produces is always `initial + k × step`, so a selection
+ * that needs more takes the next one in the series. Users read the list through
+ * that series — with 7/7, being in the ninth session means one press has been
+ * spent, and the list should show 14 rows (the fifteenth, 21) rather than a
+ * nine-row block no press could produce and no fold restored. That was the
+ * reported symptom: select the ninth session, fold the Workspace, unfold it,
+ * and a nine-row list came back with a figure that matched no press count.
+ *
+ * The raise comes from the selected row, and {@link selectionNeed} is what
+ * remembers it when that row is not on screen — the part of the block that
+ * survives a fold, as opposed to the part a press added.
+ *
+ * Only the RENDERED index is used, never the session's index in the Workspace:
+ * the host folds rows out on its own account (running rows bypass its fold),
+ * and the rendered list is the one the user reads positions off.
+ *
+ * `remember` is for {@link applyTrim} alone: it writes the measurement down so
+ * the requirement survives the row leaving the DOM. The read-only callers
+ * (`clicker`, `growTo`'s live re-read) consult the same number without writing.
+ */
+function visibleTarget(
+  group: Element,
+  rows: readonly HTMLElement[],
+  trim: number,
+  config: SidebarSessionCountConfig,
+  remember = false,
+): number {
+  return Math.max(trim, selectionNeed(group, rows, config, remember))
+}
+
+/**
+ * The block the selected session needs, in configured sizes — `0` when the
+ * group has no selection to cover.
+ *
+ * With the row on screen it is measured off the row and (when `remember`)
+ * written to the group. Without it — the host has not rendered the row, which
+ * is what unfolding a Workspace produces, since the host reopens a folded group
+ * at its own five-row limit — the last measurement stands. That remembered
+ * value is the whole reason a fold does not lose the size: measured
+ * 2026-09-28, the fifteenth session selected (its row held open by a
+ * twenty-one-row block), fold and reopen, and the list could only rebuild from
+ * the configured count because the row was not in the DOM to measure.
+ *
+ * A selection that moved to another Workspace looks exactly the same from here
+ * as a row that is not rendered, so the remembered value is never cleared on
+ * that account: it is corrected the next time a selection IS seen in the group,
+ * and it only ever holds the block a press could have produced anyway.
+ */
+function selectionNeed(
+  group: Element,
+  rows: readonly HTMLElement[],
+  config: SidebarSessionCountConfig,
+  remember: boolean,
+): number {
+  const selected = group.querySelector(SELECTED_ROW_SELECTOR)
+  const index = selected === null ? -1 : rows.findIndex(row => row === selected || row.contains(selected))
+  if (index >= 0) {
+    const need = nextConfiguredSize(index + 1, config)
+    if (remember) setAttr(group, SELECTION_ATTR, String(need))
+    return need
+  }
+  const remembered = Number(group.getAttribute(SELECTION_ATTR))
+  return Number.isFinite(remembered) && remembered > 0 ? remembered : 0
+}
+
+/**
+ * Round a row count up to the next size a press can produce: `initial + k ×
+ * step`, or the configured count itself when the count already covers it.
+ *
+ * The series is what the button walks (`clicker` adds exactly one step), so
+ * keeping every block on it means a size on screen can always be reached,
+ * described and restored by counting presses. The guards are for a
+ * hand-edited store: the schema floors both numbers, but a `0` here would
+ * otherwise divide by zero and hand the caller a NaN target.
+ */
+function nextConfiguredSize(rows: number, config: SidebarSessionCountConfig): number {
+  const base = Math.max(1, config.initialCount)
+  if (rows <= base) return base
+  const stride = Math.max(1, config.expandStep)
+  return base + Math.ceil((rows - base) / stride) * stride
+}
+
+/**
+ * How long a revealed row takes to ease back onto the screen — this tweak's
+ * only animation, and the one the panel's "expansion animation" switch gates
+ * (see {@link SidebarSessionCountConfig.animate}).
+ */
+const REVEAL_EASE_MS = 160
+
+/**
+ * Ease a batch of just-revealed rows back onto the screen.
+ *
+ * `height` rides along with `opacity` so the list GROWS into its new shape
+ * rather than snapping to it: the rows below the reveal slide down over the
+ * same 160ms instead of jumping. No `fill`, so the animation leaves the row at
+ * its natural height — which is exactly where the keyframes end, since the
+ * height was measured with the row laid out. Heights are read in one pass
+ * before any animation starts (one forced layout for the batch, not one per
+ * row).
+ */
+function easeRowsIn(rows: readonly HTMLElement[]): void {
+  const heights = rows.map(row => row.offsetHeight)
+  rows.forEach((row, index) => {
+    const height = heights[index] ?? 0
+    if (height === 0) return
+    row.animate(
+      [{ opacity: 0, height: '0px' }, { opacity: 1, height: `${String(height)}px` }],
+      { duration: REVEAL_EASE_MS, easing: 'ease-out' },
+    )
+  })
+}
+
+/**
  * Apply the trim to one group: mark every row past the target, unmark every
- * row within it, and always leave the selected row alone. Returns the number
- * of rows left on screen.
+ * row within it. Returns the number of rows left on screen.
+ *
+ * A target ABOVE the stored trim is written back as the group's trim, and that
+ * latch is the fix for the second thing users reported about the selection
+ * rule. The block a deep selection forces open used to be recomputed on every
+ * pass, so it lasted only as long as that row stayed selected: locate to the
+ * ninth session and nine rows show; click the second session and the block
+ * snaps back to the configured seven — "后面会收起来", rows the user was just
+ * looking at disappearing because they switched sessions. A raise now becomes
+ * the group's size, so the block only ever shrinks on the 收起 press (whose
+ * count the next raise may in turn exceed). Folding the Workspace keeps it
+ * too — see the sweep's note on why the host's reopen makes forgetting it
+ * unrecoverable.
+ *
+ * Persisting is also what makes the rule self-consistent: `trimOf` reads this
+ * attribute back, `clicker` grows from it, and the published remainder is
+ * `total - shown`, so a latched raise is one number everywhere instead of a
+ * derived value that three callers each compute their own way. The write is
+ * change-guarded like every other one here, and `TRIM_ATTR` is deliberately
+ * absent from the observer's `attributeFilter` — the latch cannot feed itself.
+ *
+ * The raise itself is {@link visibleTarget}'s — the next configured size above
+ * the selected row — and the latch is measured against the value STORED on the
+ * group, not against the argument: a pass that computed the raise for its own
+ * use (to know how far to grow) must not thereby skip recording it.
  *
  * Safe to run on every mutation batch and every settle frame: both directions
  * are change-guarded, so against a settled tree the call is a no-op. The
  * unmark direction is what clears a previous trim's stale marks (see
  * {@link awaitStableRows}), which is why the unconditional callers matter.
  */
-function applyTrim(group: Element, trim: number): number {
+function applyTrim(group: Element, trim: number, config: SidebarSessionCountConfig): number {
   const rows = sessionRows(group)
-  const selected = group.querySelector(SELECTED_ROW_SELECTOR)
+  const target = visibleTarget(group, rows, trim, config, true)
+  if (target > trimOf(group, config)) setAttr(group, TRIM_ATTR, String(target))
+  const revealed: HTMLElement[] = []
   let shown = 0
   for (const row of rows) {
-    // The selected row is the session the user is in; hiding it would fight
-    // the host's own reveal, which scrolls to exactly that row. It counts
-    // against the target, so a selected row deep in the list does not push
-    // the target up and quietly widen every group.
-    const keep = selected !== null && (row === selected || row.contains(selected))
-    if (keep || shown < trim) {
-      clearAttr(row, HIDDEN_ATTR)
+    if (shown < target) {
+      // Unmarking a marked row is a reveal — the user was looking at a fold a
+      // moment ago — so the batch is eased in below, unless the animation
+      // switch is off.
+      if (row.hasAttribute(HIDDEN_ATTR)) {
+        clearAttr(row, HIDDEN_ATTR)
+        revealed.push(row)
+      }
       shown += 1
     } else {
       setAttr(row, HIDDEN_ATTR, '1')
     }
   }
+  if (config.animate && revealed.length > 0) easeRowsIn(revealed)
   return shown
 }
 
@@ -497,6 +733,7 @@ function hostLabel(group: Element): string {
 async function awaitStableRows(
   group: Element,
   trim: number,
+  config: SidebarSessionCountConfig,
   frames = 5,
   max = 90,
 ): Promise<number> {
@@ -506,7 +743,7 @@ async function awaitStableRows(
   let stable = 0
   for (let frame = 0; frame < max && performance.now() - t0 < SETTLE_BUDGET_MS; frame += 1) {
     await nextFrame()
-    applyTrim(group, trim)
+    applyTrim(group, trim, config)
     const now = sessionRows(group).length
     const nowLabel = hostLabel(group)
     if (now === count && nowLabel === label) {
@@ -531,7 +768,8 @@ async function awaitStableRows(
 const PRESS_LAND_FRAMES = 10
 
 /**
- * Press the host's button until the group has settled at `needed` rows.
+ * Press the host's button until the group renders the block it is supposed to
+ * show — `needed` as a floor, re-read live on every press.
  *
  * The host's `aria-expanded` is the trap here. It mirrors `sessionsExpanded`,
  * which the host derives from its own LIMIT (`visible.hiddenCount === 0`), not
@@ -543,76 +781,67 @@ const PRESS_LAND_FRAMES = 10
  * out — the count is given a chance to catch up, and if it does not, the grow
  * stops rather than collapsing the list behind the user's back.
  *
- * ## Why a MutationObserver guards the grow
+ * The requirement is re-read every iteration rather than taken once, because
+ * the block can GROW while this loop runs: a page load starts the first pass
+ * before the app has marked its selected row, so the trim read at the top is
+ * often a step smaller than the one the selection is about to latch (measured
+ * 2026-09-28: the pass grew to the seven rows the trim then asked for, the
+ * selection appeared mid-grow, and the list was left four rows short of the
+ * fourteen its own trim demanded with nothing left to trigger another pass).
+ * `needed` stays as a floor so a caller's own target is never undercut.
  *
- * The host grows in steps of five, so a target below the step boundary (seven
- * rows, say) is always reached with rows to spare: it renders ten, and four of
- * them have to go. Trimming on the next animation frame was too late to stop
- * that being seen — the browser paints between the commit and the frame
- * callback, so the list showed ten rows and then pulled back to seven, which is
- * the blink users reported. A `MutationObserver` callback is a MICROtask, and
- * the microtask checkpoint runs before the frame is painted, so marking the
- * surplus rows the moment they are inserted means they are never presented.
- * The rAF wait below still settles the count; while the grow runs, the
- * observer is the only thing keeping the render honest.
- *
- * The callback trims UNCONDITIONALLY, not only once the rendered count has
- * passed `needed`. A raised trim target inherits stale hidden marks from the
- * previous, smaller trim — they sit on row elements the host KEEPS across its
- * keyed re-render — and on a multi-press grow the first press lands while the
- * rendered count is still below the target, so a gate there skipped the
- * cleanup and the marks survived until the last press. The row then popped
- * into the middle of the already-grown list one press late, shifting every
- * row below it: the flash users reported on every second expansion. Clearing
- * in the same microtask as the insertion is what makes the first press paint
- * a complete list. `applyTrim` is change-guarded, so with nothing stale to
- * clear it is a no-op.
+ * Marking the rows this grow produces happens elsewhere: every mutation of a
+ * group is trimmed by the mount's own observer, in the microtask it arrives in
+ * (see `setupSidebarSessionCount`). This loop only presses and waits.
  */
-async function growTo(group: Element, needed: number, budgetMs = 4000): Promise<void> {
+async function growTo(
+  group: Element,
+  needed: number,
+  config: SidebarSessionCountConfig,
+  onFirstLand: () => void,
+  budgetMs = 4000,
+): Promise<void> {
   const deadline = performance.now() + budgetMs
-  let count = sessionRows(group).length
-  const guard = count <= needed
-    ? new MutationObserver(() => { applyTrim(group, needed) })
-    : undefined
-  if (guard !== undefined) {
-    guard.observe(group, { childList: true, subtree: true })
-  }
-  try {
-    while (count < needed && performance.now() < deadline) {
-      const button = hostButton(group)
-      // No button left means the host is rendering every row it has.
-      if (button === null) return
-      if (button.getAttribute('aria-expanded') === 'true') {
-        count = await awaitStableRows(group, needed)
-        return
-      }
-      const before = count
-      button.click()
-      // Wait only until THIS press's render has landed — not for full
-      // stability. Pacing a multi-press grow by the full settle held ~100ms
-      // between presses, and the user watched the list grow in instalments
-      // (10 → 15 → pause → 20 for a +10 target); pressed back-to-back, the
-      // host's renders land a couple of frames apart and the glide animation
-      // reads them as one continuous flow. Count AND label stability is
-      // settled exactly once, after the last press, by the awaitStableRows in
-      // `syncGroup` — the figure the button publishes comes from there.
-      let landed = false
-      for (let frame = 0; frame < PRESS_LAND_FRAMES && performance.now() < deadline; frame += 1) {
-        await nextFrame()
-        count = sessionRows(group).length
-        if (count > before) {
-          landed = true
-          break
-        }
-      }
-      // The press produced nothing (host ignored it, or the render never
-      // landed). Stop rather than spin on the same button. A short grow is
-      // self-healing: `syncGroup` trims to what rendered, and the next sweep
-      // re-enters `growTo` for the remainder.
-      if (!landed) return
+  let landedOnce = false
+  for (;;) {
+    if (performance.now() >= deadline) return
+    const target = Math.max(needed, visibleTarget(group, sessionRows(group), trimOf(group, config), config))
+    const count = sessionRows(group).length
+    if (count >= target) return
+    const button = hostButton(group)
+    // No button left means the host is rendering every row it has.
+    if (button === null) return
+    if (button.getAttribute('aria-expanded') === 'true') {
+      await awaitStableRows(group, target, config)
+      return
     }
-  } finally {
-    guard?.disconnect()
+    button.click()
+    // Wait only until THIS press's render has landed — not for full
+    // stability. Pacing a multi-press grow by the full settle held ~100ms
+    // between presses, and the user watched the list grow in instalments
+    // (10 → 15 → pause → 20 for a +10 target); pressed back-to-back, the
+    // host's renders land a couple of frames apart and the glide animation
+    // reads them as one continuous flow. Count AND label stability is
+    // settled exactly once, after the last press, by the awaitStableRows in
+    // `syncGroup` — the figure the button publishes comes from there.
+    let landed = false
+    for (let frame = 0; frame < PRESS_LAND_FRAMES && performance.now() < deadline; frame += 1) {
+      await nextFrame()
+      if (sessionRows(group).length > count) {
+        landed = true
+        break
+      }
+    }
+    // The press produced nothing (host ignored it, or the render never
+    // landed). Stop rather than spin on the same button. A short grow is
+    // self-healing: `syncGroup` trims to what rendered, and the next sweep
+    // re-enters `growTo` for the remainder — which is why the sweep refuses to
+    // record a short block as settled (see its own note).
+    if (!landed) return
+    if (!landedOnce) {
+      landedOnce = true
+      onFirstLand()
+    }
   }
 }
 
@@ -690,8 +919,8 @@ function publish(
 }
 
 /**
- * Bring one group in line with the configuration: grow the host far enough,
- * then trim to the group's target and publish the button wording.
+ * One group's pass: grow the host far enough, trim to the group's target and
+ * publish the button wording.
  *
  * `alive` is the mount's liveness probe. A pass can outlive its own instance —
  * a settings change disposes and re-mounts every tweak while a grow is still
@@ -701,6 +930,13 @@ function publish(
  * the dead instance (the live one then finds it already wired and never
  * attaches its own). Checked once before the first write, and again after the
  * waits, because the waits are where the disposal lands.
+ *
+ * Marking the rows a pass produces is not this function's job and not its
+ * caller's: every mutation of a group is trimmed by the mount's own observer,
+ * in the microtask it arrives in (see `setupSidebarSessionCount`). A guard
+ * scoped to the pass looked equivalent and was not — the pass's two halves are
+ * separated by the glide settle, and a host render landing in that wait sat
+ * unmarked for as long as it took the closing pass to run.
  */
 async function syncGroup(
   group: Element,
@@ -723,9 +959,20 @@ async function syncGroup(
   // on "展开其余 2 个会话". The total comes from the same reading the figure
   // uses, so this is a statement about the Workspace, not about the host's
   // transient button state.
-  const rowsNow = sessionRows(group).length
+  const rows = sessionRows(group)
+  const rowsNow = rows.length
   const knownTotal = totalSessions(group)
-  const needsGrow = rowsNow < trimBefore && (knownTotal === null || rowsNow < knownTotal)
+  /**
+   * The block this pass is about to show: the stored trim, raised for the
+   * selection to the next configured size (see {@link visibleTarget}).
+   *
+   * Computed ONCE, before the grow, because three things have to agree on it —
+   * how far the host is grown, the figure the early publish promises, and the
+   * trim the tail applies. Computed twice, a pass could grow to one number and
+   * publish another, which is the number-changing bug in yet another costume.
+   */
+  const target = visibleTarget(group, rows, trimBefore, config)
+  const needsGrow = rowsNow < target && (knownTotal === null || rowsNow < knownTotal)
   // Take the host's button off screen BEFORE growing, not after.
   //
   // It is not just a label swap. The host recomputes its count on every render,
@@ -749,31 +996,46 @@ async function syncGroup(
    */
   let lockedTotal: number | null | undefined
   if (needsGrow) {
-    // Publish BEFORE the grow, not after it.
+    // Publish as soon as the block's SIZE is real — after the first press's
+    // render has landed, not before the grow starts.
     //
-    // The button's figure is `total - shown`, and neither input needs the rows:
-    // the total is the host's own "N more" label plus the rows it has rendered,
-    // both readable the moment the group opens, and `shown` is the trim this
-    // pass is about to apply. Waiting for the grow made the button itself the
-    // last thing to arrive — measured: expanding a Workspace put all eleven of
-    // its rows on screen by ~50ms, and the button did not appear until t=199ms,
-    // which read as the control lagging the list. The rows still walk up
-    // visibly (see the module doc), but the button is there from the start,
-    // already carrying the figure the grow was going to produce anyway.
+    // The figure is `total - shown` and it costs nothing to compute, which is
+    // why an earlier revision published it up front: waiting for the grow made
+    // the button itself the last thing to arrive (measured: expanding a
+    // Workspace put all eleven of its rows on screen by ~50ms, and the button
+    // did not appear until t=199ms, which read as the control lagging the
+    // list). But `shown` is the block this pass will end at, and that size can
+    // still move while the grow runs: unfolding a Workspace renders rows before
+    // the app has marked its selected row, so a figure published at the top
+    // promised the seven-row block and the pass delivered fourteen — measured
+    // 2026-09-28 as the user's "x 数字还会变一下", `展开其余 25 个会话` on the
+    // way in and `18` on the way out. One press later the render has landed,
+    // the app has marked the row if it was going to, and the target read then
+    // is the one the pass will actually reach. The delay is a frame or two.
     //
-    // Gated on the host's label carrying an integer, because that is the only
-    // moment the total is knowable. Without one — the host is already showing
-    // everything, or has not painted — there is no honest figure to publish
-    // early, and the pass below reads it the settled way instead.
-    if (hostNotRendered(group) > 0) {
-      // `knownTotal` is used, not a second `totalSessions` call: both reads
-      // happen in this one task with no await between them, so the value read
-      // above is exactly what a fresh call would return — and the doc above
-      // stays true, that the figure comes from a single reading.
+    // Skipped while the total is unknown: a label that has not painted yet
+    // says nothing about how many sessions the Workspace holds, and a figure
+    // published from a guess would only be corrected later — the very thing
+    // this early publish exists to avoid. A host that reports it is showing
+    // everything does NOT fall in that bucket (its total is simply what it has
+    // rendered), which matters for the press that finishes a list: measured
+    // 2026-09-28, `展开其余 4 个会话` on the last four rows, one press showing
+    // all thirty-two, and the button kept reading four until the pass settled —
+    // the user's "剩最后几条展开时 x 数字还会变一下". With the gate relaxed it
+    // flips to the host's 收起 with the rows.
+    let published = false
+    const publishOnce = (): void => {
+      if (published || !totalIsKnowable(group)) return
+      published = true
+      // `knownTotal` is used, not a second `totalSessions` call: the total does
+      // not move when the host hands rows over — only the split between
+      // rendered and unrendered does — so the value read before the grow is
+      // still the honest one, and the figure comes from a single reading.
       lockedTotal = knownTotal
-      publish(group, onPress, trimBefore, lockedTotal)
+      const settledTarget = visibleTarget(group, sessionRows(group), trimOf(group, config), config)
+      publish(group, onPress, settledTarget, lockedTotal)
     }
-    await growTo(group, trimBefore)
+    await growTo(group, target, config, publishOnce)
     // `growTo` stops the moment the row count reaches the target, and the rows
     // land in the same React commit that rewrites the host button's label — so
     // it can return with the label still reading the previous press. Publishing
@@ -781,7 +1043,7 @@ async function syncGroup(
     // change under the user (21, then 16 a third of a second later): this
     // second settle is the one that actually covers the label. With the total
     // held, the row count is all that is left to settle.
-    await awaitStableRows(group, trimBefore)
+    await awaitStableRows(group, target, config)
   }
   // The waits above are where a disposal lands, so the liveness of the mount
   // is re-checked here, before the tail — which is all writes.
@@ -794,8 +1056,12 @@ async function syncGroup(
   // were stuck at seven visible rows with no way back. If the grow fell short,
   // the trim simply exceeds what is rendered, the trim shows what is there, and
   // the next sweep tries the grow again.
+  //
+  // `trimBefore` (the stored value) is passed, not `target`: `applyTrim`
+  // recomputes the same raise and records it, so the two agree on the block
+  // while the latch stays measured against what the group had stored.
   const trim = trimBefore
-  const visible = applyTrim(group, trim)
+  const visible = applyTrim(group, trim, config)
   // The host's button was already taken off screen above, before the grow; it
   // stays in the DOM because the host still owns the "show all" state, and its
   // label is not ours to read once growth is under way.
@@ -805,8 +1071,11 @@ async function syncGroup(
 }
 
 /**
- * Mount the tweak. Returns a disposer that removes the plugin's buttons and
- * clears every marker, restoring the host's own control.
+ * Mount the tweak. Returns a disposer that removes the plugin's buttons and the
+ * row markers, restoring the host's own control — but NOT the per-group
+ * latches, which are what a remount (every settings change) reads to put the
+ * lists back the way they were. See `cleanup` and
+ * {@link resetSidebarSessionCountLayout}.
  */
 export function setupSidebarSessionCount(
   ctx: ClientContext,
@@ -857,6 +1126,75 @@ export function setupSidebarSessionCount(
   const settled = new WeakMap<Element, string>()
 
   /**
+   * Consecutive passes that ended with a group's block still short of what it
+   * should show, per group — the bound on {@link recordSettled}'s retry.
+   */
+  const shortPasses = new WeakMap<Element, number>()
+  /**
+   * How many short passes in a row are retried before the block is accepted as
+   * final. Five covers the ordinary case (a host that hands rows over one press
+   * at a time behind a slow render) without letting a host that never yields
+   * make every later mutation pay for another pass.
+   */
+  const SHORT_PASS_LIMIT = 5
+
+  /**
+   * Whether a group still has rows to gain: it renders fewer than the block it
+   * is supposed to show, and the host still has rows to hand over.
+   *
+   * The block, not the trim: `visibleTarget` includes the requirement the
+   * selected row carries, and a pass that left the block short of THAT is just
+   * as stuck as one that left it short of the trim — the load-time case below
+   * was exactly this shape.
+   *
+   * `canGrow` is what keeps the retry honest: with the host's button gone, or
+   * flagged as showing everything, there is nothing left to press, so a short
+   * block is final and recording it is correct.
+   */
+  const blockIsShort = (group: Element): boolean => {
+    const rows = sessionRows(group)
+    return rows.length < visibleTarget(group, rows, trimOf(group, config), config) && canGrow(group)
+  }
+
+  /**
+   * Record a finished pass as the group's settled state — unless the block is
+   * still short, in which case the fingerprint is left unrecorded so the next
+   * sweep retries the grow.
+   *
+   * Recording a short block froze the list: nothing about the group would
+   * change afterwards, the fingerprint would keep matching, and every later
+   * sweep would skip it — so a grow that ended a step short left the list at
+   * whatever the host had rendered for as long as the sidebar stayed quiet.
+   * Measured 2026-09-28 on a page load: the mount pass grew to the seven rows
+   * the trim asked for at the time, the app marked its selected row mid-grow
+   * (latching the trim to fourteen), and the pass recorded that ten-row state
+   * as settled — ten rows on screen against a fourteen-row target, with no
+   * sweep ever coming back to it.
+   *
+   * The retry is bounded by {@link SHORT_PASS_LIMIT}: a host that keeps
+   * accepting presses without yielding rows (or one whose flag says "everything
+   * shown" while it lags) must not make every mutation pay for another pass.
+   * After the limit the short block is recorded like any other — it self-heals
+   * on the next real change to the group, and a press recomputes from the
+   * on-screen count anyway.
+   * @returns Whether the fingerprint was recorded. Callers use it to decide
+   *   whether a sweep may be re-armed.
+   */
+  const recordSettled = (group: Element, ok: boolean): boolean => {
+    if (!ok || disposed || !group.isConnected) return false
+    if (blockIsShort(group)) {
+      const attempts = (shortPasses.get(group) ?? 0) + 1
+      if (attempts <= SHORT_PASS_LIMIT) {
+        shortPasses.set(group, attempts)
+        return false
+      }
+    }
+    shortPasses.delete(group)
+    settled.set(group, stateSignature(group))
+    return true
+  }
+
+  /**
    * A press that arrived while the group was busy, stored as the trim value it
    * computed at click time (see {@link clicker}). One slot per group: a burst
    * of clicks during one pass coalesces into the latest intent.
@@ -880,16 +1218,20 @@ export function setupSidebarSessionCount(
 
   /**
    * Serve a press queued while the group was busy. Called from every site that
-   * releases `busy`. Skipped when the group folded away during the wait —
-   * raising the trim of a detached subtree would only re-mark nodes the sweep
-   * is about to clean.
+   * releases `busy`. Dropped when the group folded away during the wait: the
+   * queued value was computed from a list that no longer exists — folding
+   * resets the block, and a press that outlived it would write the OLD size
+   * back over the fresh one (measured 2026-09-28: a press queued behind a pass
+   * re-applied a thirty-five-row trim minutes later, after the fold had already
+   * come back down to the configured count). Raising the trim of a detached
+   * subtree would likewise only re-mark nodes the sweep is about to clean.
    */
   const servePendingPress = (group: Element): void => {
     if (disposed) return
     const next = pendingPress.get(group)
     if (next === undefined) return
     pendingPress.delete(group)
-    if (!group.isConnected) return
+    if (!group.isConnected || group.querySelector(SESSION_ROW_SELECTOR) === null) return
     applyPress(group, next)
   }
 
@@ -954,8 +1296,11 @@ export function setupSidebarSessionCount(
         if (!group.isConnected || group.querySelector(SESSION_ROW_SELECTOR) === null) return
         await syncGroup(group, config, clicker, isAlive)
         // Record what this pass settled, so the next sweep can tell an idle
-        // group from one that needs work (see `stateSignature`).
-        settled.set(group, stateSignature(group))
+        // group from one that needs work (see `stateSignature`) — unless the
+        // block is still short of its target, which this path can produce just
+        // as the sweep's growing branch can (a press that ran out of budget
+        // mid-grow). Both recording sites share one rule; see `recordSettled`.
+        recordSettled(group, true)
       } catch {
         // A pass that throws — most plausibly the host's own click handler
         // throwing back through `button.click()` — must not surface as an
@@ -983,7 +1328,13 @@ export function setupSidebarSessionCount(
     // A listener that outlived its mount — see `syncGroup`'s note on the
     // re-created button — must be inert rather than run a dead instance's pass.
     if (disposed) return
-    const current = trimOf(group, config)
+    // Grows from what is ON SCREEN. Since the selection's raise is latched
+    // back into the stored trim (see {@link applyTrim}) the two agree in the
+    // steady state, but the on-screen reading is still the honest base for the
+    // click that lands between a raise and its latch — a press recorded from a
+    // stored value the list already shows would find nothing to grow and
+    // "show more" would appear dead for that press.
+    const current = visibleTarget(group, sessionRows(group), trimOf(group, config), config)
     // Two states, decided by whether a press would reveal anything: more
     // raises the trim by a step and the grow in `syncGroup` follows it, and
     // none folds back to the initial count. That is what keeps the button from
@@ -1032,13 +1383,29 @@ export function setupSidebarSessionCount(
       // "show more" under a Workspace the user had just closed, offering to
       // expand a list that is not there.
       group.querySelector(`button[${OWN_BUTTON_ATTR}]`)?.remove()
-      // Folding is also how the host resets its own limit, so the trim has to
-      // follow it back to the configured count. Keeping the old trim would
-      // re-grow the list to wherever it had been left the last time the
-      // Workspace was opened, which is not what folding a group means here.
+      // Folding resets the BLOCK but not the REQUIREMENT — the trim and the
+      // touched mark go, `SELECTION_ATTR` stays.
+      //
+      // Folding a Workspace means "collapse this list" for the presses the user
+      // spent on it, and that half has to come back compact: reported
+      // 2026-09-28, press "show more" a few times, fold the Workspace, reopen
+      // it, and a list the user was done with came back fully expanded. But the
+      // block a SELECTED row forced open cannot be recomputed after a fold at
+      // all — the host reopens a folded group at its own five-row limit, so the
+      // selected row is usually not in the DOM, and a requirement that is
+      // dropped there can never be measured again (the same day's earlier
+      // report: the fifteenth session's twenty-one-row block came back as
+      // seven). So the presses reset and the requirement does not; the reopen
+      // grows the host back to `max(configured, requirement)` and the ordinary
+      // rules take over once the row is rendered again.
       clearAttr(group, TRIM_ATTR)
       clearAttr(group, TOUCHED_ATTR)
       clearAttr(group, TOTAL_ATTR)
+      // A press queued behind a running pass is dropped with the trim it was
+      // computed from: `servePendingPress` skips a group with no rows, and this
+      // makes sure the slot is empty even if nothing releases `busy` again
+      // before the group comes back.
+      pendingPress.delete(group)
       // Folding releases the group's fingerprint with the other markers, so
       // its next unfold is treated as a fresh group and gets a full pass.
       settled.delete(group)
@@ -1081,12 +1448,13 @@ export function setupSidebarSessionCount(
       } finally {
         busy.delete(group)
       }
-      // A sweep that arrived while this group was busy skipped it, and the
-      // mutations it produced have already been delivered. Re-arm so the
-      // finished state — the button label above all — is written by a sweep
-      // that can see the group idle.
-      schedule()
-      if (ok && !disposed && group.isConnected) settled.set(group, stateSignature(group))
+      // The re-arm exists for a sweep that arrived while this group was busy
+      // and skipped it: the finished state — the button label above all — has
+      // to be written by a sweep that can see the group idle. A pass that left
+      // the block short does not re-arm, because the next sweep has to be a
+      // real mutation rather than a chain this pass starts (see `recordSettled`
+      // for both halves of that rule).
+      if (recordSettled(group, ok)) schedule()
       servePendingPress(group)
     }
   }
@@ -1106,29 +1474,74 @@ export function setupSidebarSessionCount(
   // markers along with it. Re-sweeping on those mutations is the whole reason
   // this is an observer rather than a one-shot pass.
   //
-  // The observer is fed by the tweak's own writes — every attribute write in
-  // `syncGroup` queues a record, because the filter covers the attributes the
-  // trim marks and the button publishes. That is not a loop on its own: the
-  // writes are change-guarded (`setAttr` / `clearAttr` / `setStyle` and the
-  // text comparison in `syncGroup`), so the follow-up sweep finds every value
-  // already correct, writes nothing, and the chain ends after one pass — and
-  // with the fingerprint check at the top of the sweep, that follow-up
-  // usually runs no pass at all (see `stateSignature`). An earlier revision
-  // wrote unconditionally and pinned the main thread here.
+  // The observer also applies the trim itself, before it schedules anything,
+  // because the marks have to land in the SAME microtask as the mutation that
+  // would expose a row: a `MutationObserver` callback is a microtask and the
+  // microtask checkpoint runs before the frame is painted, so a row marked
+  // here is never presented. The sweep cannot be trusted with that — it skips
+  // any group holding `busy`, so a host render landing inside a running pass
+  // (the locate button pressing the overflow, the host's own reveal) stayed
+  // unmarked until that pass's closing settle. Measured 2026-09-27, the host
+  // taking a group to twenty rows while the pass sat in its 300ms tail:
+  // nineteen rows stayed visible for ~155ms with the marks arriving at
+  // dt=184ms — the flash reported on "定位会话". Trimming here instead marks
+  // the same five rows at dt=9ms and the visible count never moves.
+  //
+  // Unconditional on purpose. A raised trim target inherits stale hidden marks
+  // from the previous, smaller trim — they ride out the host's keyed re-render
+  // on the row elements that survive it — and gating the clear on
+  // `count > target` let them be cleaned up only by the last press of a
+  // multi-press grow, which popped a row into the middle of the already-grown
+  // list one press late: the flash on every second expansion. `applyTrim` is
+  // change-guarded, so against a settled tree it writes nothing, and the
+  // records its own writes queue are no-ops in the next delivery — the chain
+  // ends after one pass.
+  //
+  // The observer is fed by the tweak's own writes for the same reason every
+  // other value written here is change-guarded: an unconditional write would
+  // queue another delivery, which would write again, and the sidebar would
+  // spin the main thread. An earlier revision did exactly that.
   const observer = new MutationObserver((records) => {
     if (disposed) return
+    /**
+     * Groups this delivery has already trimmed.
+     *
+     * The trim is per GROUP, not per record, and one host commit arrives as
+     * many records — every inserted row, plus the attribute writes that ride
+     * with it. Without the set, a batch touching two Workspaces would trim only
+     * the first one it met: the callback used to `return` on the first hit, so
+     * the second group's rows were left to the sweep `schedule()` queues. That
+     * sweep is still a microtask (so still pre-paint) EXCEPT when the group
+     * holds `busy` — a pass in flight skips its own group — which is precisely
+     * the window the inline trim exists to cover. Trimming every group in the
+     * batch closes it.
+     */
+    const trimmed = new Set<Element>()
+    let pending = false
     for (const record of records) {
       const target = record.target
       if (!(target instanceof Element)) continue
-      if (target.matches(`${LIST_SELECTOR}, ${GROUP_SELECTOR}, ${SESSION_ROW_SELECTOR}`)) {
-        schedule()
-        return
+      const group = target.closest(GROUP_SELECTOR)
+      if (group !== null) {
+        // Reads the trim per callback rather than capturing it: a press that
+        // lands mid-pass rewrites the target before its own pass queues behind
+        // the running one, and the rows arriving after that must already obey
+        // the new value. `aria-selected` is in the filter below because the
+        // visible block is measured up to the selected row — a reveal that only
+        // moves the marker still has to move the fold, in the same frame.
+        if (!trimmed.has(group)) {
+          trimmed.add(group)
+          applyTrim(group, trimOf(group, config), config)
+        }
+        pending = true
+        continue
       }
-      if (target.closest(GROUP_SELECTOR) !== null) {
-        schedule()
-        return
-      }
+      if (target.matches(`${LIST_SELECTOR}, ${SESSION_ROW_SELECTOR}`)) pending = true
     }
+    // One schedule per delivery, and only when something in scope moved —
+    // `schedule` is idempotent, so hoisting it out of the loop changes nothing
+    // about pacing, only about how many times it is asked.
+    if (pending) schedule()
   })
   observer.observe(document.body, {
     childList: true,
@@ -1137,6 +1550,22 @@ export function setupSidebarSessionCount(
     attributeFilter: [HIDDEN_ATTR, 'aria-selected', 'aria-expanded', 'data-row-key'],
   })
 
+  /**
+   * Undo the DOM patches, but KEEP the layout latches on the groups.
+   *
+   * This runs on every settings change, one microtask before the next instance
+   * mounts, and the latches are the only record of how wide each list is:
+   * `trimOf` falls back to the configured initial count, so clearing them here
+   * folded every expanded Workspace back to that count on ANY save — measured
+   * 2026-09-26, a fifteen-row block was five rows with `trim` back to `null`
+   * within 250ms of a save, which is the "改设置就把列表收起来" report. The
+   * pressed mark goes with the trim: it is what keeps the plugin's own button
+   * (the one that folds the list back) on screen.
+   *
+   * Switching the feature OFF is the reset, and only the caller knows when that
+   * happened — the mount loop calls
+   * {@link resetSidebarSessionCountLayout} for it.
+   */
   const cleanup = (): void => {
     if (disposed) return
     disposed = true
@@ -1144,13 +1573,30 @@ export function setupSidebarSessionCount(
     for (const button of document.querySelectorAll(`[${OWN_BUTTON_ATTR}]`)) button.remove()
     for (const row of document.querySelectorAll(`[${HIDDEN_ATTR}]`)) clearAttr(row, HIDDEN_ATTR)
     for (const group of document.querySelectorAll(GROUP_SELECTOR)) {
-      clearAttr(group, TRIM_ATTR)
-      clearAttr(group, TOUCHED_ATTR)
-      clearAttr(group, TOTAL_ATTR)
       const host = hostButton(group)
       if (host !== null) setStyle(host, 'display', '')
     }
     removeStyles()
   }
   return cleanup
+}
+
+/**
+ * Forget every group's latched layout: the block width the user opened, the
+ * requirement a selected row forced, the pressed mark and the cached total.
+ *
+ * The mount loop calls this when the feature is switched OFF, and on plugin
+ * teardown — never on the remount that a settings change performs, which has to
+ * leave the lists on screen exactly as they are (see `cleanup`). With the
+ * feature off the latches are inert: the marks that hide rows went with the
+ * stylesheet — but a switch-off that kept them would bring a long-expanded list
+ * back the next time the feature came on, which is not what "off" means.
+ */
+export function resetSidebarSessionCountLayout(): void {
+  for (const group of document.querySelectorAll(GROUP_SELECTOR)) {
+    clearAttr(group, TRIM_ATTR)
+    clearAttr(group, TOUCHED_ATTR)
+    clearAttr(group, TOTAL_ATTR)
+    clearAttr(group, SELECTION_ATTR)
+  }
 }

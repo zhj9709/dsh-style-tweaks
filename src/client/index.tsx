@@ -41,7 +41,7 @@ import { injectKeepTurnRailStyles } from './tweaks/keep-turn-rail.ts'
 import { injectCodeBlockFlushTopStyles } from './tweaks/code-block-flush-top.ts'
 import { setupProjectRunningIndicator } from './tweaks/project-running-indicator.ts'
 import { setupLocateCurrentSession } from './tweaks/locate-current-session.ts'
-import { setupSidebarSessionCount } from './tweaks/sidebar-session-count.ts'
+import { resetSidebarSessionCountLayout, setupSidebarSessionCount } from './tweaks/sidebar-session-count.ts'
 import { setupSettingsNavScroll } from './tweaks/settings-nav-scroll.ts'
 import { setupSidebarMiddleClickClose } from './tweaks/sidebar-middle-click-close.ts'
 import { setupLegacyStatsLine } from './tweaks/legacy-stats-line.tsx'
@@ -70,7 +70,7 @@ const TWEAK_INJECTORS: Record<string, (ctx: ClientContext, resolved: ResolvedTwe
   'keep-turn-rail': () => injectKeepTurnRailStyles(),
   'code-block-flush-top': () => injectCodeBlockFlushTopStyles(),
   'project-running-indicator': setupProjectRunningIndicator,
-  'locate-current-session': setupLocateCurrentSession,
+  'locate-current-session': (ctx, resolved) => setupLocateCurrentSession(ctx, resolved.sidebarSessionExpandAnimation),
   'settings-nav-scroll': setupSettingsNavScroll,
   'sidebar-middle-click-close': setupSidebarMiddleClickClose,
   'legacy-stats-line': (ctx, resolved) => setupLegacyStatsLine(ctx, resolved.pillsCacheHitDecimals),
@@ -310,14 +310,23 @@ export function apply(ctx: ClientContext): void {
         cleanups.push(installRightbarInitialWidth(ctx, resolved.rightbarWidthPercent))
       }
       // Sidebar session row count: a sidebar feature with two numeric
-      // parameters, so it mounts here rather than in the TWEAKS loop (same
-      // shape as the width axis above). Re-mounted on every settings change,
-      // which is also how a new count reaches the lists already on screen.
+      // parameters plus the reveal-animation switch, so it mounts here rather
+      // than in the TWEAKS loop (same shape as the width axis above).
+      // Re-mounted on every settings change — that is how a new count reaches
+      // the lists on screen — but a remount KEEPS what those lists already
+      // show: the tweak's cleanup leaves the per-group latches alone, so saving
+      // a setting no longer folds an expanded Workspace back to the configured
+      // count. Switching the feature off is the one path that forgets them, and
+      // it has to be run from here because only this loop knows the feature is
+      // off rather than merely re-mounting.
       if (resolved.sidebarSessionCountEnabled) {
         cleanups.push(setupSidebarSessionCount(ctx, {
           initialCount: resolved.sidebarSessionInitialCount,
           expandStep: resolved.sidebarSessionExpandStep,
+          animate: resolved.sidebarSessionExpandAnimation,
         }))
+      } else {
+        resetSidebarSessionCountLayout()
       }
     }
     sync()
@@ -332,6 +341,10 @@ export function apply(ctx: ClientContext): void {
       disposed = true
       unsubscribe()
       disposeMounts()
+      // The latched block widths go with the feature: a later load — or a
+      // re-enable — has to come up at the configured counts, not at whatever
+      // happened to be on screen when the plugin was torn down.
+      resetSidebarSessionCountLayout()
       resetHistoryPageSizeTargets()
     }
   }, 'dsh-style-tweaks: live tweak styles')

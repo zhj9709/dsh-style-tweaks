@@ -65,6 +65,8 @@ export interface ResolvedStyleTweaksConfig {
   sidebarSessionInitialCount: number
   /** Session rows one "show more" press adds. */
   sidebarSessionExpandStep: number
+  /** Whether reveals and the locate scroll animate instead of landing at once. */
+  sidebarSessionExpandAnimation: boolean
   /** Whether the custom history page size is active. */
   historyPageSizeEnabled: boolean
   /** History page size requested per pagination round (used while enabled). */

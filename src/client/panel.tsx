@@ -525,6 +525,17 @@ export function SettingsSection({ controller, t }: SettingsSectionProps) {
                 </div>
               </div>
             </div>
+            <div className="cst-field">
+              <div className="cst-field-top">
+                <span className="cst-label">{t('sidebarSessionExpandAnimation')}<Hint text={t('sidebarSessionExpandAnimationHint')} /></span>
+                <div className="cst-controls">
+                  <div className="cst-seg">
+                    <button type="button" className={resolved.sidebarSessionExpandAnimation ? 'cst-seg-active' : ''} disabled={!writable} onClick={() => { save('sidebarSessionExpandAnimation', true) }}>{t('tweakOn')}</button>
+                    <button type="button" className={!resolved.sidebarSessionExpandAnimation ? 'cst-seg-active' : ''} disabled={!writable} onClick={() => { save('sidebarSessionExpandAnimation', false) }}>{t('tweakOff')}</button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </>
         ) : null}
       </section>

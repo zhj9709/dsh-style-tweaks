@@ -97,6 +97,8 @@ export const MIN_SIDEBAR_SESSION_INITIAL_COUNT = 5
 export const MIN_SIDEBAR_SESSION_EXPAND_STEP = 5
 /** The stepper moves both counts one row per click. */
 export const STEP_SIDEBAR_SESSION_COUNT = 1
+/** Default state of the expansion-animation switch (off: reveals and the locate scroll land in one frame). */
+export const DEFAULT_SIDEBAR_SESSION_EXPAND_ANIMATION = false
 
 // ── History page-size constants (mirror src/config.ts) ──────────────────
 /** Whether the custom history page size is active. */
@@ -243,6 +245,7 @@ export function resolveClientConfig(
     sidebarSessionCountEnabled: resolveFlag(value?.sidebarSessionCountEnabled, DEFAULT_SIDEBAR_SESSION_COUNT_ENABLED),
     sidebarSessionInitialCount: resolveSidebarSessionInitialCount(value?.sidebarSessionInitialCount),
     sidebarSessionExpandStep: resolveSidebarSessionExpandStep(value?.sidebarSessionExpandStep),
+    sidebarSessionExpandAnimation: resolveFlag(value?.sidebarSessionExpandAnimation, DEFAULT_SIDEBAR_SESSION_EXPAND_ANIMATION),
     historyPageSizeEnabled: resolveFlag(value?.historyPageSizeEnabled, DEFAULT_HISTORY_PAGE_SIZE_ENABLED),
     historyPageSize: resolveHistoryPageSize(value?.historyPageSize),
     historyPageSizeColdStart: resolveFlag(value?.historyPageSizeColdStart, DEFAULT_HISTORY_PAGE_SIZE_COLD_START),
