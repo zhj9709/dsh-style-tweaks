@@ -303,7 +303,7 @@ export function setupSettingsNavIcon(label: () => string): () => void {
     observer.disconnect()
     restore()
     removeStyles()
-    // Identity-checked, like `running-status` / `workspace-close`: a late
+    // Identity-checked, like `workspace-close` / `legacy-running-header`: a late
     // cleanup from an older bundle instance must not clear the marker the
     // instance that replaced it just published.
     if (getGlobalCleanup() === cleanup) setGlobalCleanup(undefined)

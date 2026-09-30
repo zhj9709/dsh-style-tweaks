@@ -289,17 +289,30 @@ export interface StyleTweaksConfig {
    */
   turnProcessCounts?: boolean
   /**
-   * Restore DSH 0.1.6's dedicated blue running-status line at the live tail,
-   * immediately above the composer. The 0.1.7 grouped-work-details refactor
-   * removed `ChatView`'s separate `TurnStatus` and merged the running wording
-   * into the process-group header at the beginning of the always-open process
-   * group, so the status moves away from the composer as tool rows accumulate.
-   * On: a namespaced, visual-only clone of the host's current running label and
-   * elapsed clock is appended to the chat flow while a turn is open. The host
-   * keeps its process header and accessibility announcement. Hosts through
-   * 0.1.6 already render their own status and leave this tweak inert.
+   * Give a running turn its 0.1.7 process-group heading back: through 0.1.7-rc.2
+   * the disclosure rendered immediately and — because `turnProcessAlwaysOpen`
+   * covers every open turn — was disabled, so it read as a heading rather than a
+   * control (`深度求索中，用时 1小时50分26秒`, plus the 0.1.6 tally when
+   * `turnProcessCounts` is on). 0.2.0-rc.1 stopped drawing it mid-turn and moved
+   * the running label to a blue row at the live tail.
+   *
+   * On: a static, non-interactive row with 0.1.7's metrics is injected into the
+   * flow item 0.2.0 leaves empty for the running turn, so the heading again sits
+   * above the tool rows it belongs to and ticks once a second. It is a `<div>`,
+   * not the host's button: no chevron, no `aria-expanded`, nothing on click.
+   *
+   * The host's blue tail row is NOT left alone: while the turn has produced no
+   * row of its own yet, it is hidden, because a heading reading the same words
+   * directly above a whale reading them again is the duplication this heading
+   * exists to remove — 0.1.7 had no tail row at all. It returns as soon as the
+   * turn's first row appears, and it is only the visual children that are
+   * hidden: the host's `role="status"` announcement inside it stays in the
+   * accessibility tree. Once the turn ends only the host's own header remains.
+   *
+   * Off (default): 0.2.0's presentation stands on its own. Hosts through 0.1.7
+   * already draw the heading, and this leaves it there.
    */
-  runningStatus?: boolean
+  legacyRunningHeader?: boolean
   /**
    * Keep the stat dialogs opaque, as they were through 0.1.6: 0.1.7-alpha.1
    * redefined the elevated menu/card material (`--dsw-specific-menu` went from
@@ -432,10 +445,12 @@ export const DEFAULT_TURN_TIME_PILL = false
  */
 export const DEFAULT_TURN_PROCESS_COUNTS = true
 /**
- * Default: on — 0.1.7's process-group header moved the running label away from
- * the composer; restore the blue live-tail status that shipped through 0.1.6.
+ * Default: off — 0.2.0's blue live-tail running row is a deliberate answer to
+ * the header drifting away from the composer, so putting 0.1.7's heading back is
+ * a preference rather than a repair. Profiles with no value keep 0.2.0's
+ * presentation; an explicit `legacyRunningHeader: true` restores it.
  */
-export const DEFAULT_RUNNING_STATUS = true
+export const DEFAULT_LEGACY_RUNNING_HEADER = false
 /**
  * Default: off — the translucent frosted material is 0.1.7-alpha.1's shipped
  * look; restoring 0.1.6's opaque fill on the stat dialogs is opt-in.
@@ -552,7 +567,7 @@ const FIELDS = {
   pillsCacheHitDecimals: z.boolean().default(DEFAULT_PILLS_CACHE_HIT_DECIMALS),
   turnTimePill: z.boolean().default(DEFAULT_TURN_TIME_PILL),
   turnProcessCounts: z.boolean().default(DEFAULT_TURN_PROCESS_COUNTS),
-  runningStatus: z.boolean().default(DEFAULT_RUNNING_STATUS),
+  legacyRunningHeader: z.boolean().default(DEFAULT_LEGACY_RUNNING_HEADER),
   opaqueStatDialogs: z.boolean().default(DEFAULT_OPAQUE_STAT_DIALOGS),
   contextPillNoTooltip: z.boolean().default(DEFAULT_CONTEXT_PILL_NO_TOOLTIP),
   legacyContextMeter: z.boolean().default(DEFAULT_LEGACY_CONTEXT_METER),
@@ -627,8 +642,8 @@ export interface ResolvedStyleTweaksConfig {
   turnTimePill: boolean
   /** Whether the folded process group's header carries the 0.1.6 counts again. */
   turnProcessCounts: boolean
-  /** Whether the blue running-status line is restored at the live tail. */
-  runningStatus: boolean
+  /** Whether a running turn gets the 0.1.7 process-group heading back. */
+  legacyRunningHeader: boolean
   /** Whether the five readout stat dialogs use 0.1.6's opaque fill. */
   opaqueStatDialogs: boolean
   /** Whether the context capsule's hover tooltip is suppressed. */
@@ -679,7 +694,7 @@ export function resolveConfig(config: StyleTweaksConfig = {}): ResolvedStyleTwea
     pillsCacheHitDecimals: config.pillsCacheHitDecimals ?? DEFAULT_PILLS_CACHE_HIT_DECIMALS,
     turnTimePill: config.turnTimePill ?? DEFAULT_TURN_TIME_PILL,
     turnProcessCounts: config.turnProcessCounts ?? DEFAULT_TURN_PROCESS_COUNTS,
-    runningStatus: config.runningStatus ?? DEFAULT_RUNNING_STATUS,
+    legacyRunningHeader: config.legacyRunningHeader ?? DEFAULT_LEGACY_RUNNING_HEADER,
     opaqueStatDialogs: config.opaqueStatDialogs ?? DEFAULT_OPAQUE_STAT_DIALOGS,
     contextPillNoTooltip: config.contextPillNoTooltip ?? DEFAULT_CONTEXT_PILL_NO_TOOLTIP,
     legacyContextMeter: config.legacyContextMeter ?? DEFAULT_LEGACY_CONTEXT_METER,

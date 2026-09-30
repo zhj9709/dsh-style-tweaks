@@ -61,8 +61,8 @@ export const DEFAULT_PILLS_CACHE_HIT_DECIMALS = false
 export const DEFAULT_TURN_TIME_PILL = false
 /** Default state of the turn-process-counts tweak (on: restore the 0.1.6 tally). */
 export const DEFAULT_TURN_PROCESS_COUNTS = true
-/** Default state of the running-status tweak (on: restore the 0.1.6 live-tail line). */
-export const DEFAULT_RUNNING_STATUS = true
+/** Default state of the legacy-running-header tweak (off: 0.2.0's live-tail row stays). */
+export const DEFAULT_LEGACY_RUNNING_HEADER = false
 /** Default state of the opaque-stat-dialogs tweak (off: the 0.1.7 frosted material stays). */
 export const DEFAULT_OPAQUE_STAT_DIALOGS = false
 /** Default state of the context-pill-no-tooltip tweak (off: the shipped tooltip stays). */
@@ -233,7 +233,7 @@ export function resolveClientConfig(
     pillsCacheHitDecimals: resolveFlag(value?.pillsCacheHitDecimals, DEFAULT_PILLS_CACHE_HIT_DECIMALS),
     turnTimePill: resolveFlag(value?.turnTimePill, DEFAULT_TURN_TIME_PILL),
     turnProcessCounts: resolveFlag(value?.turnProcessCounts, DEFAULT_TURN_PROCESS_COUNTS),
-    runningStatus: resolveFlag(value?.runningStatus, DEFAULT_RUNNING_STATUS),
+    legacyRunningHeader: resolveFlag(value?.legacyRunningHeader, DEFAULT_LEGACY_RUNNING_HEADER),
     opaqueStatDialogs: resolveFlag(value?.opaqueStatDialogs, DEFAULT_OPAQUE_STAT_DIALOGS),
     contextPillNoTooltip: resolveFlag(value?.contextPillNoTooltip, DEFAULT_CONTEXT_PILL_NO_TOOLTIP),
     legacyContextMeter: resolveFlag(value?.legacyContextMeter, DEFAULT_LEGACY_CONTEXT_METER),

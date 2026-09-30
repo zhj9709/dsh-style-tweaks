@@ -100,11 +100,17 @@ export interface TurnCounts {
 interface TurnCountState {
   readonly counts: TurnCounts
   readonly foldedThrough: number
+  /**
+   * When the Turn started, from its `turn/start` event — `undefined` only when
+   * that event fell outside the loaded window, which is the one case where the
+   * elapsed clock has no honest origin (see the `start` handler).
+   */
+  readonly startedAt: number | undefined
 }
 
 /** An empty tally set folded through nothing. */
 function emptyState(): TurnCountState {
-  return { counts: { messageCount: 0, toolCallCount: 0, subagentCount: 0 }, foldedThrough: 0 }
+  return { counts: { messageCount: 0, toolCallCount: 0, subagentCount: 0 }, foldedThrough: 0, startedAt: undefined }
 }
 
 /**
@@ -123,6 +129,7 @@ interface OpenTurnCounts {
   readonly turn: number
   readonly time: number
   readonly counts: TurnCounts
+  readonly startedAt: number | undefined
 }
 
 /** Notified whenever the running Turn's tallies change. */
@@ -156,6 +163,20 @@ let registrations = 0
  */
 export function currentTurnCounts(): TurnCounts | null {
   return open?.counts ?? null
+}
+
+/**
+ * When the running Turn started, in Unix epoch milliseconds, or `undefined`
+ * when no Turn is open or its `turn/start` fell outside the loaded window.
+ *
+ * The elapsed clock needs an origin the DOM cannot supply: `RunningStatus`
+ * receives `startTime` as a prop and renders it into a shimmering label, so the
+ * only version of it reachable from outside is text this module would have to
+ * re-parse every second.
+ * @returns The running Turn's start time, when the stream knows it.
+ */
+export function currentTurnStartedAt(): number | undefined {
+  return open !== null && open.startedAt !== undefined ? open.startedAt : undefined
 }
 
 /**
@@ -247,8 +268,12 @@ function hasVisibleReply(content: readonly { readonly type: string; readonly tex
 function foldEvent(state: TurnCountState, event: SessionEventLike): TurnCountState {
   const counts = state.counts
   const foldedThrough = Math.max(state.foldedThrough, event.seq)
+  // A window that begins mid-Turn never carries its `turn/start` (see the
+  // `match` handler), so this is the only place the clock's origin can come
+  // from — and its absence is why `startedAt` is optional rather than derived.
+  const startedAt = event.type === 'turn/start' ? event.time : state.startedAt
   if (event.type === 'assistant/message' && event.surfaceOp === 'append' && hasVisibleReply(event.data.message.content)) {
-    return { counts: { ...counts, messageCount: counts.messageCount + 1 }, foldedThrough }
+    return { counts: { ...counts, messageCount: counts.messageCount + 1 }, foldedThrough, startedAt }
   }
   if (event.type === 'tool/call') {
     const subagent = isSubagentDelegationTool(event.data.name)
@@ -259,9 +284,10 @@ function foldEvent(state: TurnCountState, event: SessionEventLike): TurnCountSta
         subagentCount: counts.subagentCount + (subagent ? 1 : 0),
       },
       foldedThrough,
+      startedAt,
     }
   }
-  return { counts, foldedThrough }
+  return { counts, foldedThrough, startedAt }
 }
 
 /**
@@ -307,6 +333,7 @@ function publish(event: SessionEventLike, state: TurnCountState): void {
   if (
     open !== null
     && open.turn === turn
+    && open.startedAt === state.startedAt
     && open.counts.messageCount === counts.messageCount
     && open.counts.toolCallCount === counts.toolCallCount
     && open.counts.subagentCount === counts.subagentCount
@@ -316,6 +343,7 @@ function publish(event: SessionEventLike, state: TurnCountState): void {
   open = {
     turn,
     time: event.time,
+    startedAt: state.startedAt,
     counts: {
       messageCount: counts.messageCount,
       toolCallCount: counts.toolCallCount,

@@ -13,6 +13,16 @@ import type {} from '@deepseek-ai/dsh-client-ui-slots'
 
 export const en = {
   nav: 'Style tweaks',
+  legacyRunningHeader: 'Deep diving for {duration}',
+  // 0.1.7's `duration.hours` / `.minutes` / `.seconds` templates, restated.
+  // 0.2.0 replaced those whole-string templates with bare `duration.hourUnit`
+  // / `.minuteUnit` / `.secondUnit` (plus `duration.compact*`) and made
+  // `formatRunDuration` return an array of parts, so the old keys no longer
+  // exist and a translate call for one yields the key name. Values are 0.1.7's,
+  // unchanged, including its zero-padding of the hidden smaller unit.
+  durationHours: '{hours}h {minutes}m {seconds}s',
+  durationMinutes: '{minutes}m {seconds}s',
+  durationSeconds: '{seconds}s',
   desktopSettingsLabel: 'Settings',
   desktopSettingsHint: 'Open settings',
   settingsTitle: 'Style tweaks',
@@ -91,8 +101,8 @@ export const en = {
   'tweak.turnTimePill.ttft': 'Time to first token (TTFT)',
   'tweak.turnProcessCounts.title': 'Call counts on process groups',
   'tweak.turnProcessCounts.description': 'Through 0.1.6 the header of a folded process group was a tally: tool calls and messages, plus subagents when the turn spawned any. 0.1.7-alpha.1 replaced it with the elapsed time. This puts the 0.1.6 tally back after the time, so both halves show at once. 0.2.0 draws the process group only after a turn has ended and runs a separate "deep diving" line while it works, so the counts follow both: they grow live on that line, then settle on the header — where the message count is recomputed once the final answer lands, so that reply itself is not counted. The failed / stopped headers read the same way. A turn with nothing to count is left as shipped.',
-  'tweak.runningStatus.title': 'Blue running status at the tail',
-  'tweak.runningStatus.description': '0.1.7 removed the dedicated blue "Deep diving" line above the composer and merged the running label into the process-group header, so growing tool output pushes it away. This restores the 0.1.6 live-tail presentation with the current localized label and elapsed clock. The host keeps its process header and accessibility announcement; pre-0.1.7 hosts already have the line and stay unchanged.',
+  'tweak.legacyRunningHeader.title': 'Elapsed time above the process rows',
+  'tweak.legacyRunningHeader.description': 'Through 0.1.7-rc.2 a running turn drew its process group immediately, headed by a disabled disclosure — a heading rather than a control, since every open turn is always expanded. 0.2.0-rc.1 stopped drawing it mid-turn and moved the running label to a blue row at the live tail, where growing tool output no longer pushes it away from the composer. On: a static row with 0.1.7\'s metrics goes back above the turn\'s tool rows and ticks once a second, carrying the 0.1.6 counts as well when that tweak is on. It is not clickable and has no chevron. While the turn has produced no row of its own yet, the blue tail row stands down so the same words do not appear twice — it returns as soon as one appears, and only its visible parts are hidden, so its screen-reader announcement still fires. Off (default): 0.2.0\'s presentation stands.',
   'tweak.opaqueStatDialogs.title': 'Opaque stat dialogs',
   'tweak.opaqueStatDialogs.description': '0.1.7-alpha.1 swapped the card material for a translucent, frosted one. This switches only the click-open stat dialogs back to 0.1.6\'s opaque fill — the composer\'s session-statistics and token-usage cards, the turn-tail usage and time pills, and the context-occupancy panel (five in all). Every other menu and panel (session and workspace "..." menus, the model selector, the composer\'s / and @ menus, the todo / queue / dock panels) keeps the shipped material.',
   'tweak.contextPillNoTooltip.title': 'No context meter hover info',
@@ -152,6 +162,13 @@ export type LocaleKey = keyof typeof en
 
 export const zh: Record<LocaleKey, string> = {
   nav: '样式调整',
+  // 0.1.7-rc.2's own wording was `深度求索中，用时{duration}` — no space before
+  // the placeholder, which reads as a slip in the original. Restored here with
+  // the space the sibling `chat.deepDivingFor` uses.
+  legacyRunningHeader: '深度求索中，用时 {duration}',
+  durationHours: '{hours}小时{minutes}分{seconds}秒',
+  durationMinutes: '{minutes}分{seconds}秒',
+  durationSeconds: '{seconds}秒',
   desktopSettingsLabel: '设置',
   desktopSettingsHint: '打开设置',
   settingsTitle: '样式调整',
@@ -230,8 +247,8 @@ export const zh: Record<LocaleKey, string> = {
   'tweak.turnTimePill.ttft': '首 token 用时（TTFT）',
   'tweak.turnProcessCounts.title': '过程组显示调用次数',
   'tweak.turnProcessCounts.description': '0.1.6 及之前，折叠过程组的标题是一行计数：工具调用次数与消息条数，轮次起了子代理时还带 subagent 数；0.1.7-alpha.1 把它换成了用时。开启本项把 0.1.6 的计数接在用时后面，两半同时显示。0.2.0 起过程组要等轮次结束才出现，生成途中只有「深度求索中」那一行，所以计数跟着两处走：生成中实时增长，结束后定格在过程组标题上（消息数会在最终答案落地时重算一次，不计那条回复本身）；失败 / 停止的标题同样适用；没有可计数内容的轮次保持原样。',
-  'tweak.runningStatus.title': '输入框上方恢复蓝色运行状态',
-  'tweak.runningStatus.description': '0.1.7 去掉了输入框上方独立的蓝色「深度求索中」状态行，把运行文案并到过程组标题；工具调用越多，标题离输入框越远。开启本项恢复 0.1.6 的尾部展示：沿用当前语言的运行文案和实时用时。宿主的过程组标题与无障碍播报保持不变；0.1.7 之前的宿主本就有这行，不会重复添加。',
+  'tweak.legacyRunningHeader.title': '过程内容上方显示用时',
+  'tweak.legacyRunningHeader.description': '0.1.7-rc.2 及之前，轮次一开始渲染就有过程组标题，而且那个标题是禁用状态的——因为运行中的轮次永远展开，所以它只是个标题行，不能点。0.2.0-rc.1 不再在生成途中画它，把运行标签移到了末尾那条蓝色行上，工具输出再多也不会把它推离输入框。开启本项会在该轮次的工具行上方补回一条 0.1.7 样式的标题行，每秒刷新，并带上 0.1.6 的计数（需同时开启上一项）。它不可点击、没有箭头。轮次刚开始、下面还没有自己的内容时，末尾那条蓝色行会暂时收起，免得同一句话连着出现两次——出现第一行内容就恢复，而且只收起它的可见部分，它给读屏软件的播报照旧。默认关闭：保持 0.2.0 的样子。',
   'tweak.opaqueStatDialogs.title': '统计弹窗不透明',
   'tweak.opaqueStatDialogs.description': '0.1.7-alpha.1 把卡片材质换成了半透明 + 背景模糊。开启本项只把点开的统计弹窗换回 0.1.6 的不透明背景——输入框下方的会话统计与 token 用量（官方的「统计交互卡片」）、行尾的每轮用量与用时、以及上下文占用按钮点开的面板，共五张。其他菜单与面板（会话 / 工作区「…」菜单、模型选择、输入框的 / 与 @ 菜单、任务 / 队列 / dock 面板）保持 0.1.7 原样。',
   'tweak.contextPillNoTooltip.title': '上下文占用按钮不显示悬停信息',

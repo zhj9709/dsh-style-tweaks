@@ -125,15 +125,14 @@ export const TWEAKS: readonly TweakDescriptor[] = [
     descriptionKey: 'tweak.turnProcessCounts.description',
   },
   {
-    id: 'running-status',
-    settingKey: 'runningStatus',
-    // On: 0.1.7 removed the dedicated blue tail and moved the running label
-    // into the process-group header, where growing work pushes it away from
-    // the composer. Restoring the shipped-through-0.1.6 presentation is the
-    // default; older hosts already have it and the tweak stays inert there.
-    defaultEnabled: true,
-    titleKey: 'tweak.runningStatus.title',
-    descriptionKey: 'tweak.runningStatus.description',
+    id: 'legacy-running-header',
+    settingKey: 'legacyRunningHeader',
+    // Off: 0.2.0's blue live-tail row is the shipped answer to the header
+    // drifting away from the composer, so putting 0.1.7's mid-turn heading
+    // back is a reading preference, not a repair. Older hosts already draw it.
+    defaultEnabled: false,
+    titleKey: 'tweak.legacyRunningHeader.title',
+    descriptionKey: 'tweak.legacyRunningHeader.description',
   },
   {
     id: 'opaque-stat-dialogs',

@@ -76,20 +76,15 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 // Type-only imports activate the Context declaration merges and the `chat`
 // namespace key map this file reads through.
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
-import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { claimNode, claimStyleNode, releaseNode, releaseStyleNode } from '../style-node.ts'
+import { currentTurnCounts, registerTurnCountStream, subscribeTurnCounts } from './turn-count-stream.ts'
 import {
-  currentTurnCounts,
-  registerTurnCountStream,
-  subscribeTurnCounts,
-  type TurnCounts,
-} from './turn-count-stream.ts'
-
-/** The host `chat` vocabulary, which still carries the whole tally group. */
-type ChatTranslate = TranslateNS<'chat'>
-
-/** One key of that vocabulary, so the tally table's keys stay checked. */
-type ChatKey = Parameters<ChatTranslate>[0]
+  TALLIES,
+  TALLY_CLASS,
+  buttonTallyText,
+  countsTallyText,
+  type ChatTranslate,
+} from './turn-tally.ts'
 
 /** The host's disclosure button — one of the tweak's two anchors. */
 const PROCESS_BUTTON = 'button[data-turn-process]'
@@ -113,74 +108,15 @@ const RUNNING_HOST = '[data-chat-running]'
  * local name is the stable part.
  */
 const RUNNING_ROW = '[class*="_runningContent"]'
-/** The appended tally (namespaced, like every `cst-*` class in this plugin). */
-const TALLY_CLASS = 'cst-tp-counts'
 
 /**
- * The three tallies in 0.1.6's label order: the button attribute carrying the
- * count, the stream-side field carrying the same count while the turn is still
- * running, and the singular/plural vocabulary the host still ships for it.
- */
-const TALLIES: readonly {
-  readonly attribute: string
-  readonly field: keyof TurnCounts
-  readonly one: ChatKey
-  readonly other: ChatKey
-}[] = [
-  {
-    attribute: 'data-turn-process-tool-calls',
-    field: 'toolCallCount',
-    one: 'message.turnProcess.toolCalls.one',
-    other: 'message.turnProcess.toolCalls.other',
-  },
-  {
-    attribute: 'data-turn-process-messages',
-    field: 'messageCount',
-    one: 'message.turnProcess.messages.one',
-    other: 'message.turnProcess.messages.other',
-  },
-  {
-    attribute: 'data-turn-process-subagents',
-    field: 'subagentCount',
-    one: 'message.turnProcess.subagents.one',
-    other: 'message.turnProcess.subagents.other',
-  },
-]
-
-/**
- * Join counted parts into the string to append, or `null` when nothing counts.
- * Ported from the 0.1.6 `TurnProcessNodeView` label: a zero count is left out,
- * and the parts are joined with the host's own separator. The separator leads
- * the string so the tally reads as a continuation of the host's label
- * (`用时 9分09秒` + ` · 55 次工具调用`), which also keeps it attached to the
- * tally when a narrow row truncates the label. That leading space only survives
- * because the tally's skin sets `white-space: pre` — see the stylesheet below.
- * @param parts - The counted parts, in label order.
- * @param t - Translate seat over the host `chat` vocabulary.
- * @returns The text to append, or `null` for a turn with no counted work.
- */
-function joinTally(parts: readonly string[], t: ChatTranslate): string | null {
-  if (parts.length === 0) return null
-  const separator = t('message.turnProcess.separator')
-  return separator + parts.join(separator)
-}
-
-/**
- * The tally a settled turn's disclosure button should carry right now, read
- * from the host's own count attributes.
+ * Bring one header button in line with the counts the host published on it.
  * @param button - One `data-turn-process` disclosure button.
  * @param t - Translate seat over the host `chat` vocabulary.
- * @returns The text to append, or `null` for a turn with no counted work.
+ * @param owned - Tally ownership map (see {@link applyTally}).
  */
-function tallyText(button: HTMLElement, t: ChatTranslate): string | null {
-  const parts: string[] = []
-  for (const tally of TALLIES) {
-    const raw = button.getAttribute(tally.attribute)
-    const count = raw === null ? Number.NaN : Number(raw)
-    if (!Number.isFinite(count) || count <= 0) continue
-    parts.push(t(count === 1 ? tally.one : tally.other, { count }))
-  }
-  return joinTally(parts, t)
+function syncButton(button: HTMLElement, t: ChatTranslate, owned: Map<HTMLElement, string>): void {
+  applyTally(button, buttonTallyText(button, t), owned)
 }
 
 /**
@@ -191,15 +127,7 @@ function tallyText(button: HTMLElement, t: ChatTranslate): string | null {
  * @returns The text to append, or `null` while no turn is running.
  */
 function runningTallyText(t: ChatTranslate): string | null {
-  const counts = currentTurnCounts()
-  if (counts === null) return null
-  const parts: string[] = []
-  for (const tally of TALLIES) {
-    const count = counts[tally.field]
-    if (count <= 0) continue
-    parts.push(t(count === 1 ? tally.one : tally.other, { count }))
-  }
-  return joinTally(parts, t)
+  return countsTallyText(currentTurnCounts(), t)
 }
 
 /**
@@ -244,17 +172,6 @@ function applyTally(row: HTMLElement, text: string | null, owned: Map<HTMLElemen
   tally.textContent = text
   owned.set(tally, claimNode(tally))
   row.appendChild(tally)
-}
-
-/**
- * Bring a settled turn's header button in line with the counts the host
- * published on it.
- * @param button - One `data-turn-process` disclosure button.
- * @param t - Translate seat over the host `chat` vocabulary.
- * @param owned - Tally ownership map (see {@link applyTally}).
- */
-function syncButton(button: HTMLElement, t: ChatTranslate, owned: Map<HTMLElement, string>): void {
-  applyTally(button, tallyText(button, t), owned)
 }
 
 /**

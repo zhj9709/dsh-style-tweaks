@@ -39,9 +39,9 @@
  * through and the batch was dropped. That is a false negative in the one
  * direction this function promises never to fail, so a non-Element target now
  * lets the record through. None of the current callers subscribe to
- * `characterData` (`running-status` does, and it uses its own predicate), so
- * this changes nothing observable today; it is here so the next caller that
- * adds the option inherits the conservative reading rather than the bug.
+ * `characterData`, so this changes nothing observable today; it is here so the
+ * next caller that adds the option inherits the conservative reading rather
+ * than the bug.
  *
  * @param records - The batch handed to a `MutationObserver` callback.
  * @param scope - A CSS selector list naming the region(s) the caller decorates.

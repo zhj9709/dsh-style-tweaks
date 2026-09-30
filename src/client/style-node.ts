@@ -9,8 +9,8 @@
  * tweak that is demonstrably enabled silently disappears until the next reload.
  *
  * Ownership is therefore stamped on the node when an instance takes it, and
- * checked before removal, the same shape `running-status` uses for its own
- * stylesheet.
+ * checked before removal, the same shape `workspace-close` uses for its own
+ * injected nodes.
  *
  * **What that is guarding against is an ordering, and the ordering is not the
  * one you would assume.** Measured on 0.1.7-rc.2 (2026-09-26): the client-plugin

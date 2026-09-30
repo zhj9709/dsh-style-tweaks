@@ -48,7 +48,8 @@ import { setupLegacyStatsLine } from './tweaks/legacy-stats-line.tsx'
 import { setupPillsCacheHitDecimals } from './tweaks/pills-cache-hit-decimals.tsx'
 import { setupTurnTimePill } from './tweaks/turn-time-pill.tsx'
 import { setupTurnProcessCounts } from './tweaks/turn-process-counts.ts'
-import { setupRunningStatus } from './tweaks/running-status.ts'
+import type { StyleTweaksTranslate } from './tweaks/turn-tally.ts'
+import { setupLegacyRunningHeader } from './tweaks/legacy-running-header.ts'
 import { injectContextPillNoTooltipStyles } from './tweaks/context-pill-no-tooltip.ts'
 import { setupLegacyContextMeter } from './tweaks/legacy-context-meter.tsx'
 import { setupWorkspaceClose } from './tweaks/workspace-close.ts'
@@ -62,8 +63,16 @@ const NS = 'style-tweaks'
  * like `sessions` / `workspaces`, and tweaks whose render depends on other
  * settings read the resolved snapshot (captured at mount — any settings
  * change remounts every tweak, so the capture never goes stale).
+ *
+ * The last argument is this plugin's own locale seat, handed to the one tweak
+ * whose wording 0.2.0 no longer ships and therefore cannot be read off the
+ * host. It is a parameter rather than a module-level `bind` because the table
+ * is module-scoped and the seat is created inside `apply`. (The `Record<string,`
+ * prefix is load-bearing: `scripts/check-mirrors.mjs` slices this table out of
+ * the source by it.)
  */
-const TWEAK_INJECTORS: Record<string, (ctx: ClientContext, resolved: ResolvedTweaks, settings: SettingsClient) => () => void> = {
+type TweakInjector = (ctx: ClientContext, resolved: ResolvedTweaks, settings: SettingsClient, label: StyleTweaksTranslate) => () => void
+const TWEAK_INJECTORS: Record<string, TweakInjector> = {
   'stable-session-title': () => injectStableSessionTitleStyles(),
   'hide-session-hover-actions': () => injectHideSessionHoverActionsStyles(),
   'opaque-stat-dialogs': () => injectOpaqueStatDialogsStyles(),
@@ -77,7 +86,12 @@ const TWEAK_INJECTORS: Record<string, (ctx: ClientContext, resolved: ResolvedTwe
   'pills-cache-hit-decimals': setupPillsCacheHitDecimals,
   'turn-time-pill': setupTurnTimePill,
   'turn-process-counts': setupTurnProcessCounts,
-  'running-status': setupRunningStatus,
+  // The 0.1.7 mid-turn heading needs this plugin's own wording, which 0.2.0 no
+  // longer ships, so the `style-tweaks` seat arrives as the last argument. The
+  // tally rides on the `turnProcessCounts` setting, which is what the copy says
+  // and what the heading used to ignore.
+  'legacy-running-header': (ctx, resolved, _settings, label) =>
+    setupLegacyRunningHeader(ctx, label, resolved.turnProcessCounts),
   'context-pill-no-tooltip': () => injectContextPillNoTooltipStyles(),
   'legacy-context-meter': setupLegacyContextMeter,
   'workspace-close': (ctx, resolved, settings) => setupWorkspaceClose(ctx, resolved, settings),
@@ -299,7 +313,7 @@ export function apply(ctx: ClientContext): void {
         if (!enabled) continue
         const injector = TWEAK_INJECTORS[tweak.id]
         if (injector === undefined) continue
-        cleanups.push(injector(ctx, resolved, controller))
+        cleanups.push(injector(ctx, resolved, controller, t))
       }
       // Right Sidebar initial width: a layout feature with a numeric
       // parameter — not a registry boolean, so it mounts outside the TWEAKS
