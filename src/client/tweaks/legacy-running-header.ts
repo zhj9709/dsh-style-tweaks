@@ -41,7 +41,19 @@
  * nothing on click. A heading that lied about being a disclosure would be
  * worse than the 0.2.0 presentation it sits next to.
  *
- * ## When it goes away
+ * ## When it appears, and when it goes away
+ *
+ * It appears with the turn's first row of work and not before — within the
+ * `TICK_MS` of it rather than in the same frame, a lag argued at the ticker. A
+ * heading is something you read to know what the rows under it are, so a heading
+ * floating over an empty group is heading nothing. Until the first row lands the
+ * host's own blue tail row is on screen saying the turn is running, and this
+ * tweak leaves it exactly as 0.2.0 draws it — the same thing you would see with
+ * this feature off. That is also why nothing in this file touches the tail row:
+ * an earlier revision of this file took the duplication between the two rows as
+ * a defect to be suppressed and hid the host's row while the turn had produced
+ * nothing yet. The user has it the other way round — the tail row is 0.2.0's
+ * answer and stays untouched, and it is this heading that waits.
  *
  * As soon as the turn ends the host renders its real disclosure into the same
  * flow item, and this row leaves on the next structural check — 250 ms, not
@@ -56,10 +68,9 @@
  * ## Two limitations, stated rather than hidden
  *
  * - One heading, page-wide. `runningSlot()` takes the first empty flow item in
- *   the document, and the suppression marker is applied to every tail row on the
- *   page, so on a hypothetical page with two conversation views running at once
- *   the second view's tail row would follow the first view's output state and
- *   the clock itself comes from a single page-wide stream. DSH renders one
+ *   the document, and the clock comes from a single page-wide stream, so on a
+ *   hypothetical page with two conversation views running at once the second
+ *   view's heading would follow the first view's turn. DSH renders one
  *   conversation per page, so this is a simplification rather than a bug — but
  *   it is the same simplification `turn-count-stream.ts` makes, and it is why
  *   that file owns the explanation of the single `open` value.
@@ -89,26 +100,19 @@ const RUNNING_FLOW_ITEM = 'div[data-chat-flow-kind="turn-process"]:not(:has(butt
 const SLOT_NODE = '[data-slot="conversation.chat.node"]'
 /** The injected heading. */
 const HEADER_CLASS = 'cst-legacy-running-header'
-/** The host's blue tail row, suppressed by the marker below while it would duplicate. */
-const RUNNING_HOST = '[data-chat-running]'
 /**
- * Marker this tweak sets on the host's tail row while it is standing down. An
- * attribute rather than an inline `display`, so the host's own rules stay
- * intact and taking the row back is a plain attribute removal.
- *
- * The rule that reads it hides the row's VISUAL children — the divider and the
- * content line — and never the row itself, because its first child is the
- * host's `role="status" aria-live="polite"` announcement. Hiding the element
- * would drop that announcement out of the accessibility tree, and this tweak's
- * heading is a plain `<div>` with nothing to replace it: the screen reader
- * would go quiet for exactly the seconds the suppression is active.
+ * The host's blue tail row. Read only as a gate — `runningSlot()` refuses to
+ * paint a heading when no turn is running — and never modified: the row is
+ * 0.2.0's own running indicator and this tweak has no business hiding it.
  */
-const SUPPRESSED_ATTR = 'data-cst-suppressed'
+const RUNNING_HOST = '[data-chat-running]'
 
 /**
- * How often the DOM is re-examined. Fast enough that the window in which this
- * heading and the host's own disclosure both exist after a turn ends is a
- * quarter second rather than a full one.
+ * How often the DOM is re-examined. It sets two latencies: after a turn ends,
+ * the overlap between this heading and the host's own disclosure; after a turn
+ * begins, the gap between the turn's first row landing and the heading joining
+ * it. See the ticker in {@link setupLegacyRunningHeader} for why the second one
+ * is accepted rather than observed away.
  */
 const TICK_MS = 250
 
@@ -134,14 +138,16 @@ function runningSlot(): HTMLElement | null {
 }
 
 /**
- * Whether the running turn has produced anything yet.
+ * Whether the running turn has produced a row of its own yet.
  *
- * Measured, not matched: a turn's first seconds are a stream of empty flow
- * items (`height: 0` by the host's own rule) around the one the heading sits
- * in, and the members only start painting once there is a row to show. Asking
- * for geometry rather than for a marker class is what lets the answer be
- * "nothing yet" for the case that matters — a turn whose first tool call is
- * still in flight.
+ * This is what decides whether the heading is on screen. A turn's first
+ * seconds are a stream of empty flow items (`height: 0` by the host's own rule)
+ * around the one the heading would sit in, and the members only start painting
+ * once there is a row to show — so asking for geometry rather than for a marker
+ * class is what lets the answer be "nothing yet" for the case that matters, a
+ * turn whose first tool call is still in flight. Until it flips, nothing this
+ * tweak adds is on screen: the transcript is what 0.2.0 draws on its own, which
+ * is the whole point of waiting.
  *
  * The walk counts THIS turn's rows and nothing else, and every part of that is
  * load-bearing:
@@ -149,24 +155,29 @@ function runningSlot(): HTMLElement | null {
  * - The tail row is skipped because `RunningStatus` is itself a child of the
  *   flow column at the end of the turn, so a naive "first visible sibling" walk
  *   runs straight into it and reports a turn with zero output as having output —
- *   the predicate would be answering about the very row it is deciding whether
- *   to show. The first run shipped exactly that bug, and a test hid it by
- *   taking the tail row down along with the content rows.
+ *   the heading would appear over a group that is still empty, which is the one
+ *   thing this predicate exists to prevent. (The earlier suppression design
+ *   shipped exactly that bug, and its test hid the tail row together with the
+ *   content rows, so the assertion could not fail. Exercise this with the tail
+ *   row left VISIBLE.)
  * - Membership is `data-chat-turn`, which the host stamps on every flow item
  *   (`data-chat-turn: turn` in `ChatNodeSeat`). `ChatNodeList` appends
  *   queued-message and steering bubbles to the end of the column
  *   (`return [...rows, ...pendingRows]`), and those bubbles are NOT flow items,
  *   so they carry no such attribute — yet they have height, and without the
- *   bound a user who queues a message mid-turn would keep the tail row visible
- *   for the whole turn, which is the exact duplication this suppression exists
- *   to prevent. Anything not annotated as this turn therefore ends the walk.
- * @param item - The flow item holding the heading.
+ *   bound a user who queues a message in the first seconds of a turn would see
+ *   the heading appear over a group that is still empty. Anything not annotated
+ *   as this turn therefore ends the walk.
+ *
+ * Nothing here writes to the host's row: a turn that has produced nothing is a
+ * state 0.2.0 already draws well on its own.
+ * @param item - The flow item that would hold the heading.
  * @returns Whether at least one row of THIS turn is visible below it.
  */
 function hasVisibleProcessOutput(item: HTMLElement): boolean {
   const turn = item.getAttribute('data-chat-turn')
-  // No boundary to draw from: report "has output" so the tail row stays, which
-  // is the direction that never hides a clock the user can still read.
+  // No boundary to draw from: report "has output", which is the direction that
+  // shows the heading rather than the direction that could withhold it.
   if (turn === null) return true
   for (let node = item.nextElementSibling; node !== null; node = node.nextElementSibling) {
     if (node.matches(RUNNING_HOST)) continue
@@ -174,31 +185,6 @@ function hasVisibleProcessOutput(item: HTMLElement): boolean {
     if (node.getBoundingClientRect().height > 0) return true
   }
   return false
-}
-
-/**
- * Stand the host's blue tail row down while it would only repeat the heading.
- *
- * 0.1.7 had no tail row at all, so with this heading up, a turn that has not
- * produced anything yet shows the same words twice in a row — the heading, then
- * immediately below it the whale. Once the first row of the turn lands the
- * host's row earns its place back (it is the one that stays near the composer
- * as output accumulates), so the suppression lifts and is not a mode of its own.
- *
- * A turn whose clock this plugin cannot render — no `turn/start` inside the
- * loaded window — never suppresses: the heading would fall back to a bare
- * "deep diving" with no elapsed time, and hiding the one row that does carry a
- * clock would be a downgrade. The host reads the start straight off the turn
- * projection, so it is available where the event window is not.
- * @param slot - The slot holding the heading, or `null` when there is none.
- */
-function syncRunningRow(slot: HTMLElement | null): void {
-  const item = slot === null ? null : slot.closest<HTMLElement>('[data-chat-flow-kind]') ?? slot
-  const duplicate = item !== null && currentTurnStartedAt() !== undefined && !hasVisibleProcessOutput(item)
-  for (const host of document.querySelectorAll<HTMLElement>(RUNNING_HOST)) {
-    if (duplicate) host.setAttribute(SUPPRESSED_ATTR, '')
-    else host.removeAttribute(SUPPRESSED_ATTR)
-  }
 }
 
 /**
@@ -237,9 +223,22 @@ function headerText(t: ChatTranslate, label: StyleTweaksTranslate, withTally: bo
 }
 
 /**
- * Draw the heading for the running turn, or take it off when the turn is over.
+ * Take down every heading this instance appended, leaving the transcript as the
+ * host rendered it.
+ * @param owned - Headings this instance appended, and therefore the only ones
+ *   it may remove.
+ */
+function dropHeadings(owned: Map<HTMLElement, string>): void {
+  for (const [node, token] of owned) releaseNode(node, token)
+  owned.clear()
+}
+
+/**
+ * Draw the heading for the running turn, or take it off when the turn has no
+ * work to head yet / no longer has a slot of its own.
  * @param t - Translate seat over the host `chat` vocabulary.
  * @param label - This plugin's own locale seat, for the 0.1.7 wording.
+ * @param withTally - Whether the 0.1.6 counts belong on the heading.
  * @param owned - Heading → the token stamped on it by this instance.
  */
 function syncHeader(
@@ -252,14 +251,20 @@ function syncHeader(
   if (slot === null) {
     // The turn ended, or the session changed under us. Either way the host owns
     // this slot now and ours must not stay in it.
-    for (const [node, token] of owned) releaseNode(node, token)
-    owned.clear()
-    syncRunningRow(null)
+    dropHeadings(owned)
+    return
+  }
+  // The heading arrives with the first row it heads. Until then the host's own
+  // tail row is on screen carrying the running wording and the elapsed clock,
+  // so an early heading would be a second copy of a line the user can already
+  // read — and a caption over an empty group.
+  const item = slot.closest<HTMLElement>('[data-chat-flow-kind]') ?? slot
+  if (!hasVisibleProcessOutput(item)) {
+    dropHeadings(owned)
     return
   }
   const text = headerText(t, label, withTally)
   const existing = slot.querySelector<HTMLElement>(`:scope > .${HEADER_CLASS}`)
-  syncRunningRow(slot)
   if (existing !== null) {
     // Adopt and re-stamp, the same handover rule the other DOM tweaks use: a
     // bundle reload leaves the previous instance's heading behind, and without
@@ -330,12 +335,22 @@ export function setupLegacyRunningHeader(
   }
 
   // The DOM has to be re-examined on its own clock, not only when the stream
-  // speaks: the host painting its disclosure into this very slot is a DOM event
-  // the stream never reports, and a queued-message bubble can appear or vanish
-  // without one either. The label itself re-renders at most once a second
-  // because that is all the clock's resolution, so re-checking four times a
-  // second costs four cheap queries and a text write only on the tick that
-  // crosses a second boundary.
+  // speaks, because what puts the heading on screen is a DOM fact the stream
+  // never reports: whether the turn's first row has actually landed. The stream
+  // knows a tool call was issued well before a row with height exists; the host
+  // painting its own disclosure into this slot after the turn ends is a second
+  // such fact; and a queued-message bubble can appear or vanish with no event at
+  // all.
+  //
+  // Four checks a second cost three selector queries and one geometry read
+  // apiece, and a text write only on the tick that crosses a second boundary —
+  // the label itself re-renders at most once a second because that is all the
+  // clock's resolution. What the timer costs visibly is lag: the heading can
+  // land up to a quarter second after the row it heads, shifting the transcript
+  // by the heading's own 33px in a second step. Narrowing the interval is not
+  // free (every tick walks the sibling list and forces layout), and observing
+  // the mutation instead would put a subtree observer on the flow column for
+  // every page with this feature on, so the quarter second is the trade taken.
   const timer = window.setInterval(tick, TICK_MS)
   // Registered before the first draw for the same reason the other stream-backed
   // tweak does: a turn already running at mount time has a history to fold.
@@ -350,13 +365,7 @@ export function setupLegacyRunningHeader(
     window.clearInterval(timer)
     unsubscribe()
     disposeStream()
-    for (const [node, token] of owned) releaseNode(node, token)
-    owned.clear()
-    // The suppression marker lives on a host-owned node, so leaving it behind
-    // would keep the tail row hidden for a turn this tweak no longer speaks
-    // for. The stylesheet goes next, but the attribute is removed first so the
-    // row is never briefly unstyled.
-    syncRunningRow(null)
+    dropHeadings(owned)
     removeStyles()
     if (getGlobalCleanup() === cleanup) setGlobalCleanup(undefined)
   }
@@ -383,21 +392,9 @@ export function setupLegacyRunningHeader(
  * down the same page, and four times the 6px between ordinary tool rows.
  * Matching 0.2.0 is also what makes the running heading and the settled one
  * read as the same line, which is the point of the tweak.
- *
- * The two suppression rules reach INSIDE the tail row rather than hiding the
- * row, so the host's `role="status"` announcement survives — see
- * {@link SUPPRESSED_ATTR}. They differ in weight for a reason found by
- * measurement: the host re-shows its divider through
- * `…:not(...):is(...) ~ .EvIC1a_running > .EvIC1a_runningDivider
- * { display: block }`, a selector whose specificity is far above a plain
- * attribute chain, and without `!important` the divider stayed on screen as a
- * bare half-pixel rule above an empty row. The content line has no such
- * competitor and needs nothing extra.
  */
 const LEGACY_RUNNING_HEADER_CSS = `
 .${HEADER_CLASS}{box-sizing:border-box;display:flex;align-items:center;width:100%;min-width:0;height:calc(33px + var(--dsh-content-font-delta,0px));padding:0 0 8px;border-bottom:.5px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-tertiary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(24px + var(--dsh-content-font-delta,0px));white-space:pre;font-variant-numeric:tabular-nums}
-${RUNNING_HOST}[${SUPPRESSED_ATTR}] [class*="_runningContent"]{display:none}
-${RUNNING_HOST}[${SUPPRESSED_ATTR}] [class*="_runningDivider"]{display:none!important}
 `
 
 export const LEGACY_RUNNING_HEADER_CSS_ID = 'cst-legacy-running-header'

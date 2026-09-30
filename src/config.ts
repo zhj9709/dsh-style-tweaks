@@ -301,13 +301,13 @@ export interface StyleTweaksConfig {
    * above the tool rows it belongs to and ticks once a second. It is a `<div>`,
    * not the host's button: no chevron, no `aria-expanded`, nothing on click.
    *
-   * The host's blue tail row is NOT left alone: while the turn has produced no
-   * row of its own yet, it is hidden, because a heading reading the same words
-   * directly above a whale reading them again is the duplication this heading
-   * exists to remove — 0.1.7 had no tail row at all. It returns as soon as the
-   * turn's first row appears, and it is only the visual children that are
-   * hidden: the host's `role="status"` announcement inside it stays in the
-   * accessibility tree. Once the turn ends only the host's own header remains.
+   * The heading arrives WITH the turn's first row of work rather than with the
+   * turn: before that there is nothing under it to head, and the host's blue
+   * tail row is already on screen saying the turn is running. Nothing is taken
+   * away from the host for it — the tail row is never hidden or restyled, so
+   * before the first row lands the screen is exactly what it would be with this
+   * off, and from then on the two rows coexist. Once the turn ends only the
+   * host's own header remains.
    *
    * Off (default): 0.2.0's presentation stands on its own. Hosts through 0.1.7
    * already draw the heading, and this leaves it there.
