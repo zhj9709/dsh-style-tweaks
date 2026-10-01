@@ -145,6 +145,10 @@ const BASE_CSS = `
 .cst-snack.cst-snack-unavailable{color:var(--dsw-alias-state-error-primary)}
 .cst-snack-dot{flex:none;width:5px;height:5px;border-radius:50%;background:currentColor}
 .cst-snack-saving .cst-snack-dot{animation:cst-snack-pulse 1s ease-in-out infinite}
+/* A failed save's reason, stacked under the pill: the server's own words have to
+ * be readable, and the pill itself is a one-line capsule. */
+.cst-snack-stack{display:flex;flex-direction:column;align-items:center;gap:5px}
+.cst-snack-detail{max-width:min(560px,80vw);padding:5px 10px;border-radius:9px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);box-shadow:0 4px 14px rgba(0,0,0,.14);color:var(--dsw-alias-label-tertiary);font-family:var(--dsw-alias-font-mono,monospace);font-size:10.5px;line-height:1.45;overflow-wrap:anywhere;text-align:left}
 @keyframes cst-snack-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 @keyframes cst-snack-pulse{0%,100%{opacity:1}50%{opacity:.25}}
 .cst-loading{padding:16px;border-radius:12px;background:var(--dsw-alias-bg-layer-2);font-size:12px;color:var(--dsw-alias-label-secondary)}

@@ -31,6 +31,22 @@ class SettingsApiError extends Error {
 }
 
 /**
+ * Whether a failure is the route refusing the write on its own terms — a field
+ * the running server's schema does not declare, or a value it rejects.
+ *
+ * The panel tells this apart from a transport failure because it is the one
+ * failure no retry can fix, and because its likeliest cause is a build the
+ * server half has not loaded yet: it reads the schema at boot, so a client
+ * bundle newer than the server refuses a field it has just added by name until
+ * `dsh web` restarts.
+ * @param error - Whatever `set` / `unset` rejected with.
+ * @returns Whether the server answered `settings-rejected`.
+ */
+export function isFieldRejection(error: unknown): boolean {
+  return error instanceof SettingsApiError && error.code === 'settings-rejected'
+}
+
+/**
  * Settings requests retry briefly on 502/503: writing the profile patch
  * hot-reloads the `web` node and restarts this plugin for a moment (it
  * injects `web`), so a toggle click can land inside that window. The retry

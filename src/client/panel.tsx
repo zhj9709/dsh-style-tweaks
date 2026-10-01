@@ -12,11 +12,18 @@ import { createPortal } from 'react-dom'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { LocaleKey, Translate } from './i18n.ts'
-import { SettingsClient } from './settings-client.ts'
+import { isFieldRejection, SettingsClient } from './settings-client.ts'
 import { isDesktopRuntime, resolveValue } from './settings-value.ts'
 import { MIN_DIALOG_WIDTH, MAX_DIALOG_WIDTH, MIN_SIDE_MARGIN, MIN_RIGHTBAR_WIDTH_PERCENT, MAX_RIGHTBAR_WIDTH_PERCENT, MIN_HISTORY_PAGE_SIZE, MAX_HISTORY_PAGE_SIZE, STEP_HISTORY_PAGE_SIZE, MIN_SIDEBAR_SESSION_INITIAL_COUNT, MIN_SIDEBAR_SESSION_EXPAND_STEP, STEP_SIDEBAR_SESSION_COUNT } from './tweak-config.ts'
 import { TWEAKS, type TweakDescriptor } from './tweaks/registry.ts'
 import { closedWorkspaceEntries, restoreClosedWorkspace } from './tweaks/workspace-close.ts'
+
+/**
+ * How long a failed save's pill stays up when it has a reason to show. Longer
+ * than the 1800 ms a bare confirmation gets: a reason is there to be read, and
+ * the one this fires for most often names a fix that is not on this screen.
+ */
+const FAILURE_HOLD_MS = 6000
 
 /**
  * Hover/focus hint: a small ⓘ next to the field label; the hint text renders
@@ -70,8 +77,12 @@ export function SettingsSection({ controller, t }: SettingsSectionProps) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot)
   const resolved = resolveValue(state.value)
   const writable = state.writable
-  /** Save feedback for the top-of-panel pill; `seq` re-arms the auto-dismiss on every save. */
-  const [snack, setSnack] = useState<{ kind: 'saving' | 'applied' | 'unavailable'; seq: number } | undefined>(undefined)
+  /**
+   * Save feedback for the top-of-panel pill; `seq` re-arms the auto-dismiss on
+   * every save. A failed save carries the server's own words plus, when the
+   * route refused the write, what that refusal usually means — see `save`.
+   */
+  const [snack, setSnack] = useState<{ kind: 'saving' | 'applied' | 'unavailable'; seq: number; detail?: string; hint?: string } | undefined>(undefined)
   const [savingShown, setSavingShown] = useState(false)
   const latestSave = useRef(0)
 
@@ -85,7 +96,9 @@ export function SettingsSection({ controller, t }: SettingsSectionProps) {
   }, [snack])
   useEffect(() => {
     if (snack === undefined || snack.kind === 'saving') return
-    const timer = setTimeout(() => { setSnack(undefined) }, 1800)
+    // A reason is there to be read, so a failure that has one stays up longer
+    // than the bare confirmation a successful save shows.
+    const timer = setTimeout(() => { setSnack(undefined) }, snack.kind === 'unavailable' && snack.detail !== undefined ? FAILURE_HOLD_MS : 1800)
     return () => { clearTimeout(timer) }
   }, [snack])
 
@@ -95,8 +108,18 @@ export function SettingsSection({ controller, t }: SettingsSectionProps) {
     controller.set(field, value).then(() => {
       // A newer save supersedes this one's outcome.
       if (seq === latestSave.current) setSnack({ kind: 'applied', seq })
-    }).catch(() => {
-      if (seq === latestSave.current) setSnack({ kind: 'unavailable', seq })
+    }).catch((error: unknown) => {
+      if (seq !== latestSave.current) return
+      // The reason travels with the pill. A write the route refused is the one
+      // failure a retry cannot fix, and the likeliest cause — this plugin's
+      // client half being newer than the server half, which reads the settings
+      // schema at boot — is worth naming, because the fix is not on this screen.
+      setSnack({
+        kind: 'unavailable',
+        seq,
+        detail: error instanceof Error ? error.message : String(error),
+        ...isFieldRejection(error) ? { hint: t('saveRejectedHint') } : {},
+      })
     })
   }
 
@@ -279,9 +302,13 @@ export function SettingsSection({ controller, t }: SettingsSectionProps) {
       </header>
       <div className="cst-status">
         {snack === undefined || (snack.kind === 'saving' && !savingShown) ? null : (
-          <div className={'cst-snack cst-snack-' + snack.kind} role="status" aria-live="polite">
-            <span className="cst-snack-dot" aria-hidden="true" />
-            <span>{t(snack.kind)}</span>
+          <div className="cst-snack-stack" role="status" aria-live="polite">
+            <div className={'cst-snack cst-snack-' + snack.kind}>
+              <span className="cst-snack-dot" aria-hidden="true" />
+              <span>{t(snack.kind)}</span>
+            </div>
+            {snack.detail === undefined ? null : <div className="cst-snack-detail">{snack.detail}</div>}
+            {snack.hint === undefined ? null : <div className="cst-snack-detail">{snack.hint}</div>}
           </div>
         )}
       </div>
