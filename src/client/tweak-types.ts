@@ -31,6 +31,8 @@ export interface ResolvedStyleTweaksConfig {
   locateCurrentSession: boolean
   /** Whether the settings-nav-scroll tweak is enabled. */
   settingsNavScroll: boolean
+  /** Whether every view of the plugin management panel keeps its scroll offset, and the detail header stays pinned. */
+  pluginPanelScroll: boolean
   /** Whether the sidebar middle-click close tweak is enabled. */
   sidebarMiddleClickClose: boolean
   /** Whether the legacy-stats-line tweak is enabled. */

@@ -51,6 +51,8 @@ export const DEFAULT_PROJECT_RUNNING_INDICATOR = true
 export const DEFAULT_LOCATE_CURRENT_SESSION = true
 /** Default state of the settings-nav-scroll tweak. */
 export const DEFAULT_SETTINGS_NAV_SCROLL = true
+/** Default state of the plugin-panel-scroll tweak (on: both halves are navigation repairs). */
+export const DEFAULT_PLUGIN_PANEL_SCROLL = true
 /** Default state of the sidebar middle-click close tweak (on: browser-tab convention). */
 export const DEFAULT_SIDEBAR_MIDDLE_CLICK_CLOSE = true
 /** Default state of the legacy-stats-line tweak (off: the host's new pills stay). */
@@ -228,6 +230,7 @@ export function resolveClientConfig(
     projectRunningIndicator: resolveFlag(value?.projectRunningIndicator, DEFAULT_PROJECT_RUNNING_INDICATOR),
     locateCurrentSession: resolveFlag(value?.locateCurrentSession, DEFAULT_LOCATE_CURRENT_SESSION),
     settingsNavScroll: resolveFlag(value?.settingsNavScroll, DEFAULT_SETTINGS_NAV_SCROLL),
+    pluginPanelScroll: resolveFlag(value?.pluginPanelScroll, DEFAULT_PLUGIN_PANEL_SCROLL),
     sidebarMiddleClickClose: resolveFlag(value?.sidebarMiddleClickClose, DEFAULT_SIDEBAR_MIDDLE_CLICK_CLOSE),
     legacyStatsLine: resolveFlag(value?.legacyStatsLine, DEFAULT_LEGACY_STATS_LINE),
     pillsCacheHitDecimals: resolveFlag(value?.pillsCacheHitDecimals, DEFAULT_PILLS_CACHE_HIT_DECIMALS),

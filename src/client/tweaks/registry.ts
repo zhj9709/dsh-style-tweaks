@@ -85,6 +85,13 @@ export const TWEAKS: readonly TweakDescriptor[] = [
     descriptionKey: 'tweak.settingsNavScroll.description',
   },
   {
+    id: 'plugin-panel-scroll',
+    settingKey: 'pluginPanelScroll',
+    defaultEnabled: true,
+    titleKey: 'tweak.pluginPanelScroll.title',
+    descriptionKey: 'tweak.pluginPanelScroll.description',
+  },
+  {
     id: 'sidebar-middle-click-close',
     settingKey: 'sidebarMiddleClickClose',
     defaultEnabled: true,

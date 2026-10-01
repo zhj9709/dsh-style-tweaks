@@ -43,6 +43,7 @@ import { setupProjectRunningIndicator } from './tweaks/project-running-indicator
 import { setupLocateCurrentSession } from './tweaks/locate-current-session.ts'
 import { resetSidebarSessionCountLayout, setupSidebarSessionCount } from './tweaks/sidebar-session-count.ts'
 import { setupSettingsNavScroll } from './tweaks/settings-nav-scroll.ts'
+import { setupPluginPanelScroll } from './tweaks/plugin-panel-scroll.ts'
 import { setupSidebarMiddleClickClose } from './tweaks/sidebar-middle-click-close.ts'
 import { setupLegacyStatsLine } from './tweaks/legacy-stats-line.tsx'
 import { setupPillsCacheHitDecimals } from './tweaks/pills-cache-hit-decimals.tsx'
@@ -81,6 +82,7 @@ const TWEAK_INJECTORS: Record<string, TweakInjector> = {
   'project-running-indicator': setupProjectRunningIndicator,
   'locate-current-session': (ctx, resolved) => setupLocateCurrentSession(ctx, resolved.sidebarSessionExpandAnimation),
   'settings-nav-scroll': setupSettingsNavScroll,
+  'plugin-panel-scroll': setupPluginPanelScroll,
   'sidebar-middle-click-close': setupSidebarMiddleClickClose,
   'legacy-stats-line': (ctx, resolved) => setupLegacyStatsLine(ctx, resolved.pillsCacheHitDecimals),
   'pills-cache-hit-decimals': setupPillsCacheHitDecimals,

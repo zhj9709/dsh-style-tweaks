@@ -207,6 +207,21 @@ export interface StyleTweaksConfig {
    */
   settingsNavScroll?: boolean
   /**
+   * Put the plugin management panel back where you left it when you go **back**
+   * — returning from a component's settings page to its plugin's page, or from
+   * a plugin's page to the plugin list — and keep a detail page's header (its
+   * "插件列表" crumb, icon and actions) pinned to the top of that panel instead
+   * of scrolling away with the content. The positions are lost today for a plain
+   * CSS reason: the panel's single scrollport clamps `scrollTop` to what the
+   * current view can hold, and the views differ wildly in height, so stepping
+   * down into anything shorter than where you were loses the offset before you
+   * can come back. Going the other way applies no memory and opens the page at
+   * its top: entering a page never lands you part-way down. The pinned header
+   * means the way back never has to be scrolled to. Hosts without the plugin manager panel
+   * (its `data-plugin-panel` scrollport) leave the tweak inert.
+   */
+  pluginPanelScroll?: boolean
+  /**
    * Let a middle mouse click on a right-Sidebar tab chip close that tab
    * (docked or floating), the way browser tabs behave. The gesture goes
    * through the host's own `ctx.sidebarRight` close face, so the native
@@ -424,6 +439,14 @@ export const DEFAULT_LOCATE_CURRENT_SESSION = true
 /** Default: every shipped tweak is on. */
 export const DEFAULT_SETTINGS_NAV_SCROLL = true
 /**
+ * Default: on — both halves of this tweak are navigation repairs rather than a
+ * change of taste. The remembered list offset removes a jump the host's own
+ * scrollport causes, and the pinned header only means the way back stops
+ * scrolling out of reach; a user who prefers the stock layout can turn it off
+ * and get DSH's exactly-as-shipped panel back.
+ */
+export const DEFAULT_PLUGIN_PANEL_SCROLL = true
+/**
  * Default: on — middle-click-to-close is the convention users bring from
  * every browser tab strip, and the host itself ships no middle-click route.
  */
@@ -562,6 +585,7 @@ const FIELDS = {
   projectRunningIndicator: z.boolean().default(DEFAULT_PROJECT_RUNNING_INDICATOR),
   locateCurrentSession: z.boolean().default(DEFAULT_LOCATE_CURRENT_SESSION),
   settingsNavScroll: z.boolean().default(DEFAULT_SETTINGS_NAV_SCROLL),
+  pluginPanelScroll: z.boolean().default(DEFAULT_PLUGIN_PANEL_SCROLL),
   sidebarMiddleClickClose: z.boolean().default(DEFAULT_SIDEBAR_MIDDLE_CLICK_CLOSE),
   legacyStatsLine: z.boolean().default(DEFAULT_LEGACY_STATS_LINE),
   pillsCacheHitDecimals: z.boolean().default(DEFAULT_PILLS_CACHE_HIT_DECIMALS),
@@ -632,6 +656,8 @@ export interface ResolvedStyleTweaksConfig {
   locateCurrentSession: boolean
   /** Whether the settings-nav-scroll tweak is enabled. */
   settingsNavScroll: boolean
+  /** Whether every view of the plugin management panel keeps its scroll offset, and the detail header stays pinned. */
+  pluginPanelScroll: boolean
   /** Whether the sidebar middle-click close tweak is enabled. */
   sidebarMiddleClickClose: boolean
   /** Whether the legacy-stats-line tweak is enabled. */
@@ -689,6 +715,7 @@ export function resolveConfig(config: StyleTweaksConfig = {}): ResolvedStyleTwea
     projectRunningIndicator: config.projectRunningIndicator ?? DEFAULT_PROJECT_RUNNING_INDICATOR,
     locateCurrentSession: config.locateCurrentSession ?? DEFAULT_LOCATE_CURRENT_SESSION,
     settingsNavScroll: config.settingsNavScroll ?? DEFAULT_SETTINGS_NAV_SCROLL,
+    pluginPanelScroll: config.pluginPanelScroll ?? DEFAULT_PLUGIN_PANEL_SCROLL,
     sidebarMiddleClickClose: config.sidebarMiddleClickClose ?? DEFAULT_SIDEBAR_MIDDLE_CLICK_CLOSE,
     legacyStatsLine: config.legacyStatsLine ?? DEFAULT_LEGACY_STATS_LINE,
     pillsCacheHitDecimals: config.pillsCacheHitDecimals ?? DEFAULT_PILLS_CACHE_HIT_DECIMALS,
