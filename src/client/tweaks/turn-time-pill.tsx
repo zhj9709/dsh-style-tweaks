@@ -91,8 +91,16 @@ import { claimStyleNode, releaseStyleNode } from '../style-node.ts'
 /** Full props of the actions-row entry (owner + session kit + plugin locale seat). */
 type TurnTimePillProps = PropsRuntime<'conversation.chat.assistant-actions'> & PropsLocale<'style-tweaks'>
 
-/** The host `chat` vocabulary, which still carries the duration templates. */
+/**
+ * The host `chat` vocabulary. This file reads exactly one key off it,
+ * `message.tokensPerSecond`; 0.2.0-rc.2 deleted the three whole-string
+ * elapsed-time templates this pill used to borrow from the same seat (see
+ * {@link formatRunDuration}), so those now come from the plugin's own.
+ */
 type ChatTranslate = TranslateNS<'chat'>
+
+/** This plugin's own locale seat, where the restated duration templates live. */
+type PillTranslate = TurnTimePillProps['t']
 
 /** A settled turn's figures: its wall time plus whatever the log can rebuild. */
 interface TurnStats {
@@ -104,30 +112,46 @@ interface TurnStats {
   readonly ttftMs?: number | undefined
 }
 
-/** Two-digit unit padding for the minute/second fields (ported from the host). */
-function pad2(value: number): string {
-  return value < 10 ? `0${value}` : String(value)
-}
-
 /**
- * Localized elapsed-time label, ported verbatim from 0.1.6's `message-chrome`:
- * whole seconds below a minute, minutes and seconds from a minute on, hours
- * with the smaller units zero-padded from an hour on.
+ * Localized elapsed-time label: whole seconds below a minute, minutes and
+ * seconds from a minute on, hours with the minutes and seconds behind them.
+ * The units and the thresholds are the host's own (the parts-returning
+ * `formatRunDuration` of 0.2.0-rc.2), and nothing is zero-padded — a long turn
+ * reads `1小时5分9秒`, not `1小时05分09秒`.
+ *
+ * The missing padding is the one deliberate departure from the 0.1.6 source
+ * this is ported from. The host's own settled process-group title spells the
+ * same turn's time the same unpadded way (`已完成，用时 5分3秒`), it sits a few
+ * dozen pixels above this pill on the very same turn, and the two figures are
+ * equal — measured 2026-10-02 on four settled turns (`49秒` / `23分13秒` /
+ * `11分51秒` / `1分58秒` matched the title verbatim) — so padding here would
+ * read as one number with two values. `turn-tally.ts`'s `formatLiveDuration`
+ * made the same call, for the same reason, against the live row's clock.
+ *
+ * The three templates are read from THIS plugin's seat, restated in `i18n.ts`.
+ * 0.1.6 asked the `chat` seat for `duration.hours` / `.minutes` / `.seconds`,
+ * whole strings; 0.2.0-rc.2 deleted all three (0.2.0-rc.1 still carried them
+ * alongside the new bare `duration.hourUnit` / `.minuteUnit` / `.secondUnit`
+ * plus `duration.compact*`) and made its own `formatRunDuration` return an
+ * array of parts. A translate call for a deleted key prints the key name
+ * itself — which is what this pill and its dialog showed on the 0.2.0-rc.2
+ * host — and the build stays green because devDependencies are pinned to
+ * 0.2.0-rc.1, whose `ChatKey` still lists the three old keys. (The rc.2
+ * declarations no longer do: compiling the old call against them fails with
+ * TS2345, verified against `…/.dsh-versions/dsh-0.2.0-rc.2`.)
  * @param ms - Elapsed duration in milliseconds (negatives clamp to zero).
- * @param t - Translate seat over the host `chat` vocabulary.
- * @returns The duration text, e.g. `1分12秒` / `1h 02m 03s`.
+ * @param t - This plugin's locale seat.
+ * @returns The duration text, e.g. `1分12秒` / `1h 2m 3s`.
  */
-function formatRunDuration(ms: number, t: ChatTranslate): string {
+function formatRunDuration(ms: number, t: PillTranslate): string {
   const total = Math.max(0, Math.floor(ms / 1000))
   const hours = Math.floor(total / 3600)
   const minutes = Math.floor(total / 60) % 60
   const seconds = total % 60
-  if (hours > 0) {
-    return t('duration.hours', { hours, minutes: pad2(minutes), seconds: pad2(seconds) })
-  }
-  return minutes > 0
-    ? t('duration.minutes', { minutes, seconds: pad2(seconds) })
-    : t('duration.seconds', { seconds })
+  if (hours > 0) return t('durationHours', { hours, minutes, seconds })
+  // `total >= 60`, not `minutes > 0`: identical here, but the host's condition
+  // is stated in total seconds and this mirrors it rather than coinciding.
+  return total >= 60 ? t('durationMinutes', { minutes, seconds }) : t('durationSeconds', { seconds })
 }
 
 /** Sub-turn latency figure: one decimal under ten seconds, whole beyond (ported message-chrome). */
@@ -225,10 +249,10 @@ function usePillDialog() {
 function TurnTimePillButton({ stats, hostT, t }: {
   stats: TurnStats
   hostT: ChatTranslate
-  t: TurnTimePillProps['t']
+  t: PillTranslate
 }) {
   const { open, setOpen, rootRef, panelRef, pos } = usePillDialog()
-  const duration = formatRunDuration(stats.runMs, hostT)
+  const duration = formatRunDuration(stats.runMs, t)
   const title = t('tweak.turnTimePill.pillTitle')
   return (
     <span ref={rootRef} className="cst-ttp-root">
@@ -263,7 +287,11 @@ function TurnTimePillButton({ stats, hostT, t }: {
               plugin's seat because the host's surviving pair is worded for the
               composer's whole-session dialog (`stats.dialog.ttft` reads
               "首 token 平均（TTFT）", an average that does not hold for one
-              turn); the values keep the host's surviving unit templates. */}
+              turn); the two durations keep the plugin's restated 0.1.6
+              templates for the same reason the labels are the plugin's — 0.2.0
+              dropped the host's whole-string `duration.*` group — while the
+              speed row reads the host's `message.tokensPerSecond`, which the
+              `chat` seat still carries. */}
           <dl className="cst-ttp-details" data-turn-time-details>
             <dt>{t('tweak.turnTimePill.duration')}</dt>
             <dd>{duration}</dd>
@@ -276,7 +304,7 @@ function TurnTimePillButton({ stats, hostT, t }: {
             {stats.ttftMs !== undefined && (
               <>
                 <dt>{t('tweak.turnTimePill.ttft')}</dt>
-                <dd>{hostT('duration.seconds', { seconds: formatLatencySeconds(stats.ttftMs) })}</dd>
+                <dd>{t('durationSeconds', { seconds: formatLatencySeconds(stats.ttftMs) })}</dd>
               </>
             )}
           </dl>

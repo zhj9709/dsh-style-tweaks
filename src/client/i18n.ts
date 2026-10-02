@@ -15,11 +15,12 @@ export const en = {
   nav: 'Style tweaks',
   legacyRunningHeader: 'Deep diving for {duration}',
   // 0.1.7's `duration.hours` / `.minutes` / `.seconds` templates, restated.
-  // 0.2.0 replaced those whole-string templates with bare `duration.hourUnit`
-  // / `.minuteUnit` / `.secondUnit` (plus `duration.compact*`) and made
-  // `formatRunDuration` return an array of parts, so the old keys no longer
-  // exist and a translate call for one yields the key name. Values are 0.1.7's,
-  // unchanged, including its zero-padding of the hidden smaller unit.
+  // 0.2.0-rc.2 deleted those whole-string templates (0.2.0-rc.1 still carried
+  // them alongside the new bare `duration.hourUnit` / `.minuteUnit` /
+  // `.secondUnit` plus `duration.compact*`) and made `formatRunDuration` return
+  // an array of parts, so on the running host a translate call for one of the
+  // old keys yields the key name. Values are 0.1.7's, unchanged, including its
+  // zero-padding of the hidden smaller unit.
   durationHours: '{hours}h {minutes}m {seconds}s',
   durationMinutes: '{minutes}m {seconds}s',
   durationSeconds: '{seconds}s',

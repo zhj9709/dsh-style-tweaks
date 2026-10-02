@@ -26,6 +26,7 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 // being reachable would slip through green. This file OWNS that type, so it
 // imports the augmentation itself instead of depending on a sibling doing it.
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { LocaleKey } from '../i18n.ts'
 import type { TurnCounts } from './turn-count-stream.ts'
 
 /** The host `chat` vocabulary, which still carries the whole tally group. */
@@ -51,8 +52,19 @@ interface StyleTweaksTexts {
  * This plugin's own locale seat, narrowed to the keys the elapsed clock reads.
  * The panel binds `style-tweaks` and hands the seat in, the same way the other
  * tweaks that need it are mounted (see `index.tsx`).
+ *
+ * The `LocaleKey` half of the intersection is what keeps the two lists honest:
+ * `StyleTweaksTexts` above is a hand-written second list of key names, so
+ * without it a key renamed in `i18n.ts` would still compile and then print the
+ * key name at runtime — the exact failure the duration templates were moved off
+ * the host seat to avoid. Intersecting keeps this seat's own parameter types
+ * (the framework's `Record<string, unknown>` params would otherwise drop them)
+ * AND ties every key back to the plugin's dictionary.
  */
-export type StyleTweaksTranslate = <Key extends keyof StyleTweaksTexts>(key: Key, params: StyleTweaksTexts[Key]) => string
+export type StyleTweaksTranslate = <Key extends keyof StyleTweaksTexts & LocaleKey>(
+  key: Key,
+  params: StyleTweaksTexts[Key],
+) => string
 
 /** One key of that vocabulary, so the tally table's keys stay checked. */
 type ChatKey = Parameters<ChatTranslate>[0]
@@ -149,11 +161,13 @@ export function buttonTallyText(button: HTMLElement, t: ChatTranslate): string |
  * The two departures from the host, both deliberate:
  *
  * - The three templates are read from THIS plugin's seat. 0.1.7 had
- *   `duration.hours` / `.minutes` / `.seconds` as whole strings; 0.2.0 replaced
- *   them with bare `duration.hourUnit` / `.minuteUnit` / `.secondUnit` plus
- *   `duration.compact*` and made `formatRunDuration` return parts, so asking
- *   the bound `chat` seat for the old keys returns the key names themselves.
- *   That is what the first run of this printed.
+ *   `duration.hours` / `.minutes` / `.seconds` as whole strings; 0.2.0-rc.2
+ *   deleted all three (0.2.0-rc.1 still carried them alongside the new bare
+ *   `duration.hourUnit` / `.minuteUnit` / `.secondUnit` plus
+ *   `duration.compact*`) and made `formatRunDuration` return parts, so asking
+ *   the bound `chat` seat for an old key returns the key name itself. That is
+ *   what the first run of this printed — and the build stayed green, because
+ *   devDependencies are pinned to 0.2.0-rc.1, whose `ChatKey` still lists them.
  * - No zero padding, unlike 0.1.7's `formatLiveRunDuration`, which did pad.
  *   This is the opposite trade from the heading's margin: there the old rule
  *   merely made the row heavier, here the two clocks sit on screen together and
