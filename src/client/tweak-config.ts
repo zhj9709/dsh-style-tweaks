@@ -99,7 +99,11 @@ export const MIN_SIDEBAR_SESSION_INITIAL_COUNT = 5
 export const MIN_SIDEBAR_SESSION_EXPAND_STEP = 5
 /** The stepper moves both counts one row per click. */
 export const STEP_SIDEBAR_SESSION_COUNT = 1
-/** Default state of the expansion-animation switch (off: reveals and the locate scroll land in one frame). */
+/**
+ * Default state of the expansion-animation switch (off: reveals and the locate
+ * scroll land in one frame). Read only while the custom row count is on — see
+ * the field's doc in `src/config.ts`.
+ */
 export const DEFAULT_SIDEBAR_SESSION_EXPAND_ANIMATION = false
 
 // ── History page-size constants (mirror src/config.ts) ──────────────────

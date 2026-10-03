@@ -638,14 +638,15 @@ function pressOverflow(group: HTMLElement): boolean {
 
 /**
  * Duration of the locate's own scroll, in milliseconds — the animated half of
- * the "expansion animation" switch (see {@link scrollRowIntoView}).
+ * the sidebar session list's animation switch (see {@link scrollRowIntoView}).
  *
  * The locate cannot use `scrollIntoView({ behavior: 'smooth' })`: on a machine
  * that reports `prefers-reduced-motion: reduce` — this one does — Chromium
  * makes that call an instant jump, and the jump is the flash the user reported.
  * Measured 2026-09-27: a "smooth" scroll of the sidebar list went 0 → 568px in
  * one frame, landing in the same frame as the row reveal, so the whole sidebar
- * teleported. This loop is the locate's own, so it runs either way.
+ * teleported. This loop is the locate's own, so it runs either way — under the
+ * section's master switch, which `index.tsx` folds into `animate`.
  */
 const SCROLL_MS = 280
 
@@ -663,13 +664,15 @@ function scrollableAncestor(element: HTMLElement): HTMLElement | null {
 /**
  * Scroll the row to the middle of its scroller.
  *
- * `animate` is the panel's "expansion animation" switch, threaded in from the
- * mount. On, the scroll is driven here rather than by the browser (see
- * {@link SCROLL_MS}); off, the row is put in place in a single frame with
- * `behavior: 'instant'`, which is the switch's promise — no transition, and no
- * dependence on the platform's motion preference, which is exactly what made
- * the old `behavior: 'smooth'` call land instantly here and smoothly
- * elsewhere.
+ * `animate` is the sidebar session list's animation switch, threaded in from the
+ * mount ALREADY combined with that section's master switch (see
+ * `setupLocateCurrentSession`). On, the scroll is driven here rather than by the
+ * browser (see {@link SCROLL_MS}); off, the row is put in place in a single frame
+ * with `behavior: 'instant'`, which is the switch's promise — no transition, and
+ * no dependence on the platform's motion preference, which is exactly what made
+ * the old `behavior: 'smooth'` call land instantly here and smoothly elsewhere.
+ * Off is also what the master switch means for this button: with the custom row
+ * count off, the sidebar is DSH's own and this tweak adds no motion to it.
  *
  * The animated target is re-read every frame, because the reveal that just put
  * this row in the DOM is still growing: the session-count tweak eases the rows
@@ -1123,9 +1126,14 @@ function setGlobalCleanup(fn: (() => void) | undefined): void {
  * the observer. Safe to call when the search button never appears — the
  * tweak then stays inert until the next observer tick finds one.
  *
- * `animateScroll` is the "expansion animation" switch from the Sidebar session
- * list section, captured at mount (index.tsx re-mounts every tweak on any
- * settings change, so the capture cannot go stale). It gates only this tweak's
+ * `animateScroll` is the "expansion animation" switch of the Sidebar session
+ * list section, ALREADY combined with that section's master switch by
+ * `index.tsx`: this tweak glides only while the custom row count is on AND the
+ * animation switch is on. The gate is the section's, not this button's — with
+ * the count feature off the sidebar is DSH's own again and this button must not
+ * add motion to it. Both inputs are captured at mount (index.tsx re-mounts every
+ * tweak on any settings change, and `sidebarSessionCountEnabled` is not one of
+ * the exempt keys, so the capture cannot go stale). It gates only this tweak's
  * scroll; DSH's own row animations are not ours to gate.
  */
 export function setupLocateCurrentSession(ctx: ClientContext, animateScroll: boolean): () => void {

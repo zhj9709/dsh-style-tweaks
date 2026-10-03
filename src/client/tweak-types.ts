@@ -67,7 +67,11 @@ export interface ResolvedStyleTweaksConfig {
   sidebarSessionInitialCount: number
   /** Session rows one "show more" press adds. */
   sidebarSessionExpandStep: number
-  /** Whether reveals and the locate scroll animate instead of landing at once. */
+  /**
+   * Whether reveals and the locate scroll animate instead of landing at once.
+   * Both are read only while `sidebarSessionCountEnabled` is on (see
+   * `index.tsx`); the value itself is kept while that is off.
+   */
   sidebarSessionExpandAnimation: boolean
   /** Whether the custom history page size is active. */
   historyPageSizeEnabled: boolean

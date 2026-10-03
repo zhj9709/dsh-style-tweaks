@@ -192,13 +192,19 @@ function hasVisibleProcessOutput(item: HTMLElement): boolean {
  * one AND the tally tweak is on.
  *
  * Both halves come from dictionaries that 0.2.0 moved out from under this
- * plugin. The running wording lost its key (`message.turnProcess.deepDivingFor`
- * is gone), so it is this plugin's `legacyRunningHeader`; the duration lost its
- * three whole-string templates (0.2.0 replaced them with bare unit strings),
- * so `formatLiveDuration` reads this plugin's `durationHours` /
- * `durationMinutes` / `durationSeconds` instead — see `turn-tally.ts`. The
- * tally is the one part the host still owns, and it is read off the same
- * `chat` seat the other tweak uses.
+ * plugin. The running wording: 0.1.7's `message.turnProcess.deepDivingFor` is
+ * gone from the host, and although 0.2.0's own tail row says almost the same
+ * sentence (`chat.deepDivingFor`, which ends in the shimmer's `···`), this row
+ * is 0.1.7's heading and borrows neither its ellipsis nor its live-row wording —
+ * so the sentence is this plugin's `legacyRunningHeader`, restated. The duration
+ * lost its three whole-string templates (`duration.hours` / `.minutes` /
+ * `.seconds`; 0.2.0 replaced them with bare unit strings), so
+ * `formatLiveDuration` reads this plugin's `durationHours` / `durationMinutes` /
+ * `durationSeconds` instead — see `turn-tally.ts`. The prefix used when the
+ * clock has no origin does come from the host: `chat.deepDiving` still exists
+ * and is what `RunningStatus` itself falls back to. The tally is the one part
+ * the host still owns end to end, and it is read off the same `chat` seat the
+ * other tweak uses.
  *
  * The tally is gated on `turnProcessCounts` because that is what the setting
  * promises, and because this tweak registers its OWN stream — the counts are

@@ -19,8 +19,15 @@ export const en = {
   // them alongside the new bare `duration.hourUnit` / `.minuteUnit` /
   // `.secondUnit` plus `duration.compact*`) and made `formatRunDuration` return
   // an array of parts, so on the running host a translate call for one of the
-  // old keys yields the key name. Values are 0.1.7's, unchanged, including its
-  // zero-padding of the hidden smaller unit.
+  // old keys yields the key name. Values are 0.1.7's, unchanged — without the
+  // zero-padding of the hidden smaller unit, because the two clocks (the host's
+  // live row and this heading) sit on screen together and `05` next to the
+  // host's `5` reads as the same number having two values.
+  //
+  // `legacyRunningHeader` above is this plugin RESTATING 0.1.7's
+  // `message.turnProcess.deepDivingFor`, a key 0.2.0 dropped. The host's own
+  // near-copy is `chat.deepDivingFor` — the live tail row's line, which ends in
+  // the shimmer's `···` and therefore is not the 0.1.7 heading.
   durationHours: '{hours}h {minutes}m {seconds}s',
   durationMinutes: '{minutes}m {seconds}s',
   durationSeconds: '{seconds}s',
@@ -57,7 +64,7 @@ export const en = {
   sidebarSessionExpandStep: 'Rows added per expansion',
   sidebarSessionExpandStepHint: 'How many rows one press of "show more" adds, at least 5 with no upper bound. The stepper moves it one row per click. When the remaining rows are fewer than the step, the list just shows all of them, as DSH does.',
   sidebarSessionExpandAnimation: 'Expansion animation',
-  sidebarSessionExpandAnimationHint: 'Ease the sidebar list into its new shape instead of snapping: the rows "show more", an opened session and the locate button bring back fade in and grow the list over 160 ms, and the locate button\'s own scroll glides to its row over 280 ms. OFF makes both land in a single frame. Both exist because a machine set to reduce motion skips the host\'s own row fades and turns the browser\'s smooth scroll into an instant jump. Only shown while the custom row count is on; the value is kept for when you switch it back on, and the locate button\'s scroll follows it either way.',
+  sidebarSessionExpandAnimationHint: 'Ease the sidebar list into its new shape instead of snapping: the rows "show more", an opened session and the locate button bring back fade in and grow the list over 160 ms, and the locate button\'s own scroll glides to its row over 280 ms. OFF makes both land in a single frame. Both exist because a machine set to reduce motion skips the host\'s own row fades and turns the browser\'s smooth scroll into an instant jump. Shown — and in effect — only while the custom row count above is on: with that off the sidebar is DSH\'s own again, this button\'s scroll included, and the value is kept for when you switch the count back on.',
   historyPageSizeEnabled: 'Custom history page size',
   historyPageSizeEnabledHint: 'DSH chooses its own history request size. When ON, the browser sends your exact configured size for "Load earlier" and turn jumps, whether that is larger or smaller than DSH\'s request. OFF (default) keeps DSH\'s own behaviour and hides the size rows below.',
   historyPageSize: 'Messages per history page',
@@ -85,7 +92,7 @@ export const en = {
   'tweak.projectRunningIndicator.title': 'Project running indicator',
   'tweak.projectRunningIndicator.description': 'Show the conversation title\'s animated running dot in the sidebar: on the right side of each project directory (so a busy conversation stays visible even when the directory is collapsed), and in a session row\'s status slot whenever that session holds a background job the app\'s own dot does not cover.',
   'tweak.locateCurrentSession.title': 'Locate current session',
-  'tweak.locateCurrentSession.description': 'Add a "locate" button next to the sidebar search box. Click it to expand the current session\'s workspace and scroll the session into view. The scroll lands in a single frame by default; turn on "Expansion animation" in the Sidebar session list section for the 280 ms glide instead.',
+  'tweak.locateCurrentSession.description': 'Add a "locate" button next to the sidebar search box. Click it to expand the current session\'s workspace and scroll the session into view. The scroll lands in a single frame by default; for the 280 ms glide, turn on the custom row count in the Sidebar session list section and its "Expansion animation" option.',
   'tweak.settingsNavScroll.title': 'Scrollable settings nav',
   'tweak.settingsNavScroll.description': 'Let the settings dialog\'s left menu scroll when its entries outgrow the panel, instead of silently clipping the ones at the bottom.',
   'tweak.pluginPanelScroll.title': 'Plugin panel keeps its place on the way back',
@@ -206,7 +213,7 @@ export const zh: Record<LocaleKey, string> = {
   sidebarSessionExpandStep: '每次展开增加条数',
   sidebarSessionExpandStepHint: '点一次「展开其余」增加的条数，最小 5，不设上限；加减号每次点击变化 1。当剩余条数不足一个步长时，列表会直接全部显示，与 DSH 原生行为一致。',
   sidebarSessionExpandAnimation: '展开动画',
-  sidebarSessionExpandAnimationHint: '开启后，侧边栏列表以过渡的方式长到新形态而不是瞬间到位：「展开其余」、打开会话与定位按钮带回来的行在 160 毫秒内淡入并撑开高度，定位按钮自己的滚动在 280 毫秒内滑到目标行。关闭则两者都是一帧到位。系统开启「减弱动态效果」时，宿主自己的行淡入与浏览器的平滑滚动都会失效（退化成瞬间跳转），这两处动效因此由插件自己驱动。此项仅在「自定义会话显示条数」开启时显示；关闭该功能期间取值会保留，定位按钮的滚动在任何时候都跟随它。',
+  sidebarSessionExpandAnimationHint: '开启后，侧边栏列表以过渡的方式长到新形态而不是瞬间到位：「展开其余」、打开会话与定位按钮带回来的行在 160 毫秒内淡入并撑开高度，定位按钮自己的滚动在 280 毫秒内滑到目标行。关闭则两者都是一帧到位。系统开启「减弱动态效果」时，宿主自己的行淡入与浏览器的平滑滚动都会失效（退化成瞬间跳转），这两处动效因此由插件自己驱动。此项仅在「自定义会话显示条数」开启时显示并生效——关闭该功能时侧边栏回到 DSH 原样、定位按钮的滚动同样一帧到位；取值会保留，供重新开启时使用。',
   historyPageSizeEnabled: '自定义历史分页大小',
   historyPageSizeEnabledHint: 'DSH 原生会自行决定每次历史请求的条数。开启后，浏览器会让「加载更早」和轮次跳转精确使用你设置的条数，无论比 DSH 原生值大还是小。关闭时（默认）保持 DSH 原生行为，下方条数设置行一并隐藏。',
   historyPageSize: '每次加载的历史消息数',
@@ -234,7 +241,7 @@ export const zh: Record<LocaleKey, string> = {
   'tweak.projectRunningIndicator.title': '项目目录运行指示',
   'tweak.projectRunningIndicator.description': '在侧边栏显示与对话标题一致的运行动画圆点：一是项目目录右侧（目录收起时也能一眼看出里面有对话正在进行），二是会话行原本空着的状态槽——会话有后台任务在跑而原生圆点不显示时补上。',
   'tweak.locateCurrentSession.title': '定位当前会话',
-  'tweak.locateCurrentSession.description': '在侧边栏搜索框旁边添加一个"定位"按钮。点击后展开当前会话所属的工作区目录，并将该会话滚动到侧边栏视口内。滚动默认一帧到位；在「侧边栏会话列表」里开启「展开动画」才是 280 毫秒缓动。',
+  'tweak.locateCurrentSession.description': '在侧边栏搜索框旁边添加一个"定位"按钮。点击后展开当前会话所属的工作区目录，并将该会话滚动到侧边栏视口内。滚动默认一帧到位；要用 280 毫秒缓动，需在「侧边栏会话列表」里开启「自定义会话显示条数」，并打开其中的「展开动画」。',
   'tweak.settingsNavScroll.title': '设置菜单可滚动',
   'tweak.settingsNavScroll.description': '设置项较多时，让设置面板左侧菜单可以上下滚动，而不是把放不下的项直接裁掉。',
   'tweak.pluginPanelScroll.title': '插件面板返回时保持位置',

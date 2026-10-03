@@ -80,7 +80,16 @@ const TWEAK_INJECTORS: Record<string, TweakInjector> = {
   'keep-turn-rail': () => injectKeepTurnRailStyles(),
   'code-block-flush-top': () => injectCodeBlockFlushTopStyles(),
   'project-running-indicator': setupProjectRunningIndicator,
-  'locate-current-session': (ctx, resolved) => setupLocateCurrentSession(ctx, resolved.sidebarSessionExpandAnimation),
+  // The locate scroll glides only while BOTH switches are on: the
+  // expansion-animation switch belongs to the sidebar session-count section
+  // (that is where it is shown), so with the count feature off the plugin leaves
+  // the list — and this button's scroll — exactly as DSH ships it, one frame.
+  // `sidebarSessionCountEnabled` is not exempt from `sameMountInputs`, so
+  // flipping either switch re-mounts this tweak and the capture cannot go stale.
+  'locate-current-session': (ctx, resolved) => setupLocateCurrentSession(
+    ctx,
+    resolved.sidebarSessionCountEnabled && resolved.sidebarSessionExpandAnimation,
+  ),
   'settings-nav-scroll': setupSettingsNavScroll,
   'plugin-panel-scroll': setupPluginPanelScroll,
   'sidebar-middle-click-close': setupSidebarMiddleClickClose,

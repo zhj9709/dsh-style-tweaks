@@ -29,7 +29,7 @@
  *   3. **Re-label** — hide the host's button and put the plugin's own in its
  *      place. The wording is the host's own (`workspace` namespace, the
  *      `sessions.expand` / `sessions.collapse` pair), and the number is the
- *      honest remainder from {@link pendingCount}: sessions above the host's
+ *      honest remainder (see {@link remainder}): sessions above the host's
  *      limit, read off that very label, plus the rows this trim is holding.
  *
  * Pressing the plugin's button changes only the trim count; growing is always
@@ -51,7 +51,7 @@
  * — the presses land close enough together that the user sees one growth, not a
  * ladder. Growth is now always shown, through the host's own row animation.
  *
- * ## The button is published before the rows, not after
+ * ## The button is published with the rows, not after them
  *
  * Showing the growth is not the same as waiting for it, and conflating the two
  * is what made the control feel slow. Publishing used to sit at the very end of
@@ -60,19 +60,24 @@
  * eleven of its rows on screen by ~50ms, and the button did not appear until
  * t=199ms. The rows were there and the thing you press to see more was not.
  *
- * The figure itself never needed that wait. It is `total - shown`, and both
- * halves are known the moment the group opens: the total is the host's own "N
- * more" label plus the rows it has rendered, and `shown` is the trim the pass is
- * about to apply. So the button is published before the grow starts, carrying
- * the figure the grow was going to produce, and the publish after it reuses that
- * same total — held for the pass, because asking `totalSessions` twice means
- * asking the host's label twice, and the host rewrites that label on every
- * render. Publishing early is therefore not publishing early *and then again*:
- * the number lands once and stays put.
+ * The figure itself never needed that wait — it is `total - shown`, and both
+ * halves are known from a single reading — but publishing it before the grow
+ * turned out to be one step too early: `shown` is the block the pass will END
+ * at, and that size can still move while the grow runs (unfolding a Workspace
+ * renders rows before the app marks its selected row, so a figure published up
+ * front promised seven rows and the pass delivered fourteen — measured
+ * 2026-09-28 as "x 数字还会变一下"). The publish therefore fires on the first
+ * LANDING of the grow, one frame or two after the press: the rows the press
+ * produced are on screen, the app has marked the row if it was going to, and
+ * the number that goes up is the one the pass will end on. The total is held for
+ * the rest of the pass — asking `totalSessions` twice would mean asking the
+ * host's label twice, and the host rewrites that label on every render — so the
+ * number lands once and stays put.
  *
- * The one case that cannot publish early is a host label with no integer in it —
- * the host is already showing everything, or has not painted yet. There is no
- * honest figure to put up front there, so that pass reads it the settled way.
+ * The one case that cannot publish at the first landing is a host label with no
+ * integer in it — the host is already showing everything, or has not painted
+ * yet. There is no honest figure to put up then, so that pass reads it the
+ * settled way.
  *
  * ## What the tweak does not do
  *
@@ -113,6 +118,18 @@
  * `project-running-indicator` do. `data-row-key` is the host's own contract and
  * carries the group key, which is what the per-group state is keyed by.
  *
+ * ## Nested Workspaces
+ *
+ * The sidebar's `workspace-tree` grouping mode renders a child Workspace's
+ * `groupSection` INSIDE its parent's (`renderGroup` order: workspace row,
+ * `div[role=group]{children}`, the parent's own rows, the parent's overflow
+ * button). Every read and write here is therefore scoped by
+ * {@link owns} — a descendant query over a parent also returns its children's
+ * rows, and a trim computed from that list keeps the CHILDREN visible while
+ * marking the parent's own sessions hidden, with no pass left to un-hide them
+ * (trimming only ever runs for the innermost group). This is the reason
+ * `sessionRows`, `hostButton`, `ownButtonNode` and `selectedRow` all filter.
+ *
  * @module dsh-style-tweaks/client/tweaks/sidebar-session-count
  */
 
@@ -127,11 +144,18 @@ const OWN_BUTTON_ATTR = 'data-cst-sid-button'
 /**
  * How long to let the host's row transition finish before a corrective pass.
  *
- * `AnimatedRows` glides a row in or out over ~200ms (`ROW_GLIDE_MS`) and keeps
- * the departing row in the DOM for that whole window, where it still matches
- * the `session:` row selector. Any count taken inside the window includes a row
- * that is on its way out, so a trim computed there is computed against a set
- * that will shrink. This is the host's own duration plus slack.
+ * The host glides rows in and out over ~200ms (`ROW_GLIDE_MS` in its
+ * `AnimatedRows`) and commits them in batches, so a count read inside that
+ * window describes a set that is still changing: measured 2026-09-26, a pass
+ * that ran mid-animation saw thirteen rows, marked the tail for a ten-row
+ * block, and the animation then finished at ten — leaving marks on rows that
+ * survived. This is the host's own duration plus slack.
+ *
+ * A note for whoever re-derives this: the departing row is NOT the reason.
+ * rc.2 animates a CLONE, stripped of `data-row-key` and parked in a sibling
+ * overlay outside the list, so a departing row never matches
+ * `SESSION_ROW_SELECTOR` and never counts toward a group. The wait is about the
+ * arriving batch, and 300ms is empirical.
  */
 const GLIDE_SETTLE_MS = 300
 
@@ -150,17 +174,26 @@ const SELECTED_ROW_SELECTOR = '[data-row-key^="session:"][aria-selected="true"]'
  * The rules this tweak needs. `!important` because the host's own row rules set
  * `display`, and both of these have to win over them.
  *
- * The second rule hides the host's overflow button outright, for the WHOLE
- * page, rather than hiding it from script. Doing it in script left a window: the
- * host inserts the button in the same commit that adds the rows, and the tweak's
- * observer only reached it two microtasks later, so the host's own count — a
- * figure recomputed on every render and wrong for most of the grow — was on
- * screen for those milliseconds. A stylesheet applies as part of layout, with
- * no such window, and the plugin's own button takes over with a settled number.
+ * The second rule hides the host's overflow button rather than hiding it from
+ * script. Doing it in script left a window: the host inserts the button in the
+ * same commit that adds the rows, and the tweak's observer only reached it two
+ * microtasks later, so the host's own count — a figure recomputed on every
+ * render and wrong for most of the grow — was on screen for those milliseconds.
+ * A stylesheet applies as part of layout, with no such window, and the plugin's
+ * own button takes over with a settled number.
+ *
+ * It is scoped to groups where the plugin's button is actually present, and
+ * that scope is the fallback: were the plugin's own publish to fail for a group
+ * (a throw, or any of the paths that decide not to show a button), an
+ * unscoped rule would leave that list with no way to expand at all — for the
+ * pointer, the keyboard and assistive technology alike — while the scoped one
+ * simply leaves the host's own control in place. During a grow the host's
+ * button is additionally hidden by an inline style, which is what covers the
+ * frames before the plugin's button exists.
  */
 const SESSION_COUNT_CSS = `
 [${HIDDEN_ATTR}="1"] { display: none !important; }
-${OVERFLOW_BUTTON_SELECTOR} { display: none !important; }
+${GROUP_SELECTOR}:has(> button[${OWN_BUTTON_ATTR}]) > ${OVERFLOW_BUTTON_SELECTOR} { display: none !important; }
 `
 
 /** Locale bound to the host's `workspace` namespace, for the button wording. */
@@ -289,14 +322,82 @@ function injectStyles(): () => void {
   return () => { releaseStyleNode(style, owner) }
 }
 
+const INSTANCE_SEQ_KEY = '__cst_sid_instance_seq__'
+
+/**
+ * A unique identity for one mount of this tweak.
+ *
+ * On `globalThis`, not in module scope, for the same reason `style-node` keeps
+ * its counter there: a hot-reloaded bundle is a fresh module instance, so a
+ * module-level counter would hand the new instance the token the old one is
+ * still using — and the button the old instance wired would look like the new
+ * instance's own.
+ * @returns The token to stamp on buttons this mount wires.
+ */
+function nextInstanceToken(): string {
+  const store = globalThis as unknown as Record<string, number | undefined>
+  const next = (store[INSTANCE_SEQ_KEY] ?? 0) + 1
+  store[INSTANCE_SEQ_KEY] = next
+  return String(next)
+}
+
+/** Attribute carrying the token of the instance that wired a button. */
+const OWNER_ATTR = 'data-cst-sid-owner'
+
+/**
+ * Whether `node` belongs to THIS group rather than to a nested one.
+ *
+ * The sidebar nests Workspaces in its `workspace-tree` grouping mode:
+ * `renderGroup` renders a child's `groupSection` INSIDE its parent's, ordered
+ * `[workspace row, div[role=group]{children}, …the parent's own rows, its
+ * overflow button]` — so a descendant query over a parent also returns every
+ * child's rows, selected marker, overflow button and this tweak's own button.
+ * Everything below is scoped through this test, because a parent's trim that
+ * counted its children's rows would hide the parent's own sessions (they sort
+ * after the children, so they are the ones past the target) and no pass would
+ * ever un-hide them: trimming only ever runs for the innermost group.
+ *
+ * `closest` is the right test rather than `:scope >`, because the host does not
+ * promise which wrapper holds the button (today it is a direct child of the
+ * group's own `groupSection`, and the rows are too).
+ */
+function owns(group: Element, node: Element): boolean {
+  return node.closest(GROUP_SELECTOR) === group
+}
+
 /** The host's overflow button for a group, or null when the group is not folded. */
 function hostButton(group: Element): HTMLButtonElement | null {
-  return group.querySelector<HTMLButtonElement>(OVERFLOW_BUTTON_SELECTOR)
+  for (const button of group.querySelectorAll<HTMLButtonElement>(OVERFLOW_BUTTON_SELECTOR)) {
+    if (owns(group, button)) return button
+  }
+  return null
+}
+
+/**
+ * This tweak's own button inside a group, or null.
+ *
+ * Scoped like everything else here: a parent group also CONTAINS its children's
+ * buttons, and publishing into the wrong one would leave the child without a
+ * control and the parent with two.
+ */
+function ownButtonNode(group: Element): HTMLButtonElement | null {
+  for (const button of group.querySelectorAll<HTMLButtonElement>(`button[${OWN_BUTTON_ATTR}]`)) {
+    if (owns(group, button)) return button
+  }
+  return null
+}
+
+/** The selected session row of THIS group, or null. */
+function selectedRow(group: Element): HTMLElement | null {
+  for (const row of group.querySelectorAll<HTMLElement>(SELECTED_ROW_SELECTOR)) {
+    if (owns(group, row)) return row
+  }
+  return null
 }
 
 /** Session rows currently rendered for a group, in document order. */
 function sessionRows(group: Element): HTMLElement[] {
-  return [...group.querySelectorAll<HTMLElement>(SESSION_ROW_SELECTOR)]
+  return [...group.querySelectorAll<HTMLElement>(SESSION_ROW_SELECTOR)].filter(row => owns(group, row))
 }
 
 /** Current trim target for a group, defaulting to the configured initial count. */
@@ -308,11 +409,13 @@ function trimOf(group: Element, config: SidebarSessionCountConfig): number {
 /**
  * Whether the host still has a pressable "show more" for this group.
  *
- * The two states that cannot grow are: no overflow button (the host renders
- * none when it is already showing everything), and a button that is
- * `aria-expanded="true"` (the host's "everything is shown" state, where a
- * press would fold it back to five). Both leave the rendered count fixed, so
- * a group in either state must not be queued for growing.
+ * The two states that cannot grow are: no overflow button (the host renders none
+ * once its own five-row fold hides nothing — including when it is expanded to
+ * everything, where the button that IS present reads "收起" instead), and a
+ * button that is `aria-expanded="true"` (the host derives that flag from its own
+ * LIMIT, so a press there would fold the list back to five rather than extend
+ * it). Both leave the rendered count fixed, so a group in either state must not
+ * be queued for growing.
  */
 function canGrow(group: Element): boolean {
   const button = hostButton(group)
@@ -365,7 +468,11 @@ function hostNotRendered(group: Element): number {
  */
 function totalIsKnowable(group: Element): boolean {
   if (hostNotRendered(group) > 0) return true
-  if (hostButton(group)?.getAttribute('aria-expanded') !== 'true') return false
+  const button = hostButton(group)
+  // No button at all: the host's own fold hides nothing, so what is rendered IS
+  // the total — the same reading `totalSessions` makes for this state.
+  if (button === null) return sessionRows(group).length > 0
+  if (button.getAttribute('aria-expanded') !== 'true') return false
   const cached = Number(group.getAttribute(TOTAL_ATTR))
   return Number.isFinite(cached) && cached > 0 && cached >= sessionRows(group).length
 }
@@ -383,6 +490,16 @@ function totalIsKnowable(group: Element): boolean {
  * which read as the number stalling and then jumping. With the total held, the
  * remainder is `total - shown`, and `shown` is this tweak's own value, so the
  * new figure is available the instant the trim is applied.
+ *
+ * The cache is only trustworthy while the Workspace cannot have SHRUNK past it.
+ * A Workspace whose sessions were archived or deleted goes from "N more" to no
+ * button at all, and the host's button is rendered exactly while its own fold
+ * still hides something — so its absence is proof that every session it has is
+ * on screen. Trusting the old, larger cache there published a remainder that did
+ * not exist and turned the button into one that only re-wrote the same number
+ * (measured shape: nine sessions, configured seven, six archived → the button
+ * kept reading "展开其余 6 个会话" over a three-row list). The cache is therefore
+ * dropped whenever the host reports it is showing everything it has.
  */
 function totalSessions(group: Element): number | null {
   const notRendered = hostNotRendered(group)
@@ -392,27 +509,52 @@ function totalSessions(group: Element): number | null {
     setAttr(group, TOTAL_ATTR, String(total))
     return total
   }
-  // No integer in the label: either the host shows everything (so `rendered`
-  // IS the total) or it has not painted its label yet (so keep what we know).
+  // No host button: the host's own fold is hiding nothing, so `rendered` IS the
+  // total. Any cache from when the Workspace was larger is stale by definition.
+  if (hostButton(group) === null) {
+    clearAttr(group, TOTAL_ATTR)
+    return rendered > 0 ? rendered : null
+  }
+  // A button with no integer in its label is the host's "everything is shown"
+  // state. Its flag is derived from the host's LIMIT while the rows it has
+  // committed can lag behind (see `growTo`), so the cache is what tells "really
+  // everything" apart from "the flag is ahead of the DOM" — and it may only be
+  // used while it still covers what is rendered.
   const cached = Number(group.getAttribute(TOTAL_ATTR))
   if (Number.isFinite(cached) && cached >= rendered && cached > 0) return cached
   return rendered > 0 ? rendered : null
 }
 
 /**
- * Sessions a press would reveal.
+ * Both halves of the published figure, from one reading of the total.
  *
- * Counted as "everything the Workspace holds, minus what is on screen", so it
- * covers both places the remainder can sit — above the host's own limit, and
- * below it behind this tweak's trim. Reading only the trim reported a list
- * with seven unrendered sessions as complete; reading only the host's label
- * ignored the rows this tweak is hiding, and left the figure unable to be
- * produced at all until the host re-rendered.
+ * `pending` is "everything the Workspace holds, minus what is on screen", so it
+ * covers the two places the remainder can sit — above the host's own limit, and
+ * below it behind this tweak's trim. Reading only the trim reported a list with
+ * seven unrendered sessions as complete; reading only the host's label ignored
+ * the rows this tweak is hiding, and left the figure unable to be produced at
+ * all until the host re-rendered.
+ *
+ * `total` comes out with it because the caller needs to know whether the
+ * rendered rows add up to it: `shown` is a promise about the block a pass is
+ * heading for, which during a grow can exceed what the host has handed over
+ * yet, and that is exactly the state in which `pending` reads 0 without the
+ * list being complete. Asking twice would also mean reading the host's label
+ * twice, and the host rewrites that label on every render.
+ * @param group - The group being measured.
+ * @param shown - Rows the caller has on screen (or is heading for).
+ * @param knownTotal - Total held for this pass, or undefined to read it live.
+ * @returns The Workspace's session total (`null` while unknown) and the
+ *   remainder a press would reveal.
  */
-function pendingCount(group: Element, shown: number, knownTotal?: number | null): number {
+function remainder(
+  group: Element,
+  shown: number,
+  knownTotal?: number | null,
+): { readonly total: number | null; readonly pending: number } {
   const total = knownTotal === undefined ? totalSessions(group) : knownTotal
-  if (total === null) return remainingRows(group)
-  return Math.max(0, total - shown)
+  if (total === null) return { total: null, pending: remainingRows(group) }
+  return { total, pending: Math.max(0, total - shown) }
 }
 
 /**
@@ -420,9 +562,23 @@ function pendingCount(group: Element, shown: number, knownTotal?: number | null)
  * the host's limit with nothing held by the trim, and a press is still
  * meaningful there because it raises the trim and the grow then follows — so
  * this asks the two places separately rather than only about hidden rows.
+ *
+ * The published FIGURE is included as a third place, and that is the point: the
+ * button shows whenever the remainder is above zero, so a press must not be
+ * allowed to mean "fold back" in a state the button just described as "N more
+ * sessions". The two readings part exactly where the host's flag runs ahead of
+ * the rows it has committed (see `growTo`): the label there still counts
+ * sessions that are not on screen, so growing is the honest answer and the
+ * count drops to zero on its own once the rows land. `shown` is what the caller
+ * has on screen — the same value it publishes — so both halves read one number,
+ * through the same {@link remainder} the figure comes from.
+ * @param group - The group whose button is being pressed.
+ * @param shown - Session rows the caller currently has on screen.
+ * @returns Whether the press should extend the list rather than fold it.
  */
-function hasMore(group: Element): boolean {
-  return hostNotRendered(group) > 0 || remainingRows(group) > 0
+function hasMore(group: Element, shown: number): boolean {
+  if (hostNotRendered(group) > 0 || remainingRows(group) > 0) return true
+  return remainder(group, shown).pending > 0
 }
 
 /**
@@ -447,9 +603,9 @@ function hasMore(group: Element): boolean {
  */
 function stateSignature(group: Element): string {
   const rows = sessionRows(group)
-  const own = group.querySelector<HTMLButtonElement>(`button[${OWN_BUTTON_ATTR}]`)
+  const own = ownButtonNode(group)
   const host = hostButton(group)
-  const selected = group.querySelector(SELECTED_ROW_SELECTOR)
+  const selected = selectedRow(group)
   const last = rows.length > 0 ? rows[rows.length - 1] : undefined
   let hidden = 0
   let firstHiddenKey = ''
@@ -579,7 +735,7 @@ function visibleTarget(
  * What it cannot do is demand rows the Workspace does not have. A remembered
  * block past the real total leaves `applyTrim`'s target above the last row, so
  * the mark loop never runs out, every row is shown and nothing is hidden. Nor
- * does the button's figure inherit it: `pendingCount` is `total − shown` with
+ * does the button's figure inherit it: `remainder` is `total − shown` with
  * `total` read from the host, so the number on the button stays the honest one
  * even when the target behind it is not.
  */
@@ -589,7 +745,7 @@ function selectionNeed(
   config: SidebarSessionCountConfig,
   remember: boolean,
 ): number {
-  const selected = group.querySelector(SELECTED_ROW_SELECTOR)
+  const selected = selectedRow(group)
   const index = selected === null ? -1 : rows.findIndex(row => row === selected || row.contains(selected))
   if (index >= 0) {
     const need = nextConfiguredSize(index + 1, config)
@@ -728,9 +884,9 @@ function hostLabel(group: Element): string {
  * The row count: the host commits rows in batches and `AnimatedRows` glides
  * them over ~200ms, so a count read straight after a press can be partial.
  *
- * The label: `pendingCount` takes "sessions above the host's limit" from the
- * host button's own text, and React rewrites that text as part of the same
- * render that adds the rows. Waiting on the count alone is therefore not
+ * The label: {@link hostNotRendered} takes "sessions above the host's limit"
+ * from the host button's own text, and React rewrites that text as part of the
+ * same render that adds the rows. Waiting on the count alone is therefore not
  * enough — the count settled at 15ms while the button still read the previous
  * "20", so the first pass computed 21 and the corrective pass, 300ms later,
  * recomputed 16. Users saw the button's number change under them after every
@@ -829,17 +985,24 @@ const PRESS_LAND_FRAMES = 10
  * closing settle — reintroducing exactly the "control lags the list" timing
  * this early publish exists to avoid. The callback carries its own `published`
  * latch, so calling it on each landing costs one attribute read and stops.
+ *
+ * `alive` is checked before every press and before `onLand`: this loop can be
+ * mid-wait when a settings save disposes the mount (`index.tsx` re-mounts every
+ * tweak), and a loop that kept going would press the host's button for a feature
+ * the user just switched off and publish a button whose listener belongs to the
+ * disposed instance.
  */
 async function growTo(
   group: Element,
   needed: number,
   config: SidebarSessionCountConfig,
   onLand: () => void,
+  alive: () => boolean,
   budgetMs = 4000,
 ): Promise<void> {
   const deadline = performance.now() + budgetMs
   for (;;) {
-    if (performance.now() >= deadline) return
+    if (performance.now() >= deadline || !alive()) return
     const target = Math.max(needed, visibleTarget(group, sessionRows(group), trimOf(group, config), config))
     const count = sessionRows(group).length
     if (count >= target) return
@@ -873,6 +1036,7 @@ async function growTo(
     // re-enters `growTo` for the remainder — which is why the sweep refuses to
     // record a short block as settled (see its own note).
     if (!landed) return
+    if (!alive()) return
     onLand()
   }
 }
@@ -882,7 +1046,7 @@ async function growTo(
  *
  * Both halves come from the host's `workspace` locale namespace, so the
  * wording and its locale follow the host's own catalogue. The count is the
- * honest one from {@link pendingCount} — the same figure the press is about —
+ * honest one from {@link remainder} — the same figure the press is about —
  * so the label cannot promise one thing and deliver another, which is what
  * happened when the host's own number was reused with a different step size.
  */
@@ -893,15 +1057,27 @@ function buttonText(pending: number): string {
   return tWorkspace?.('sessions.expand', { n }) ?? `展开其余 ${n} 个会话`
 }
 
-/** Create (once) the plugin's own overflow button inside a group. */
-function ownButton(group: Element, onClick: () => void): HTMLButtonElement {
-  const existing = group.querySelector<HTMLButtonElement>(`button[${OWN_BUTTON_ATTR}]`)
+/**
+ * Create the plugin's own overflow button inside a group.
+ *
+ * The button carries the token of the instance that WIRED it, and only that
+ * instance may reuse it. A boolean "already wired" marker was the reason a
+ * disposed instance's button could come back to life: a pass that outlives its
+ * mount can still publish one (see `publishOnce`), the successor instance found
+ * the marker set — the state-node rule is "already wired, so do not wire" — and
+ * the button stayed bound to a `clicker` that returns immediately. An unknown
+ * token therefore means "replace the node", not "adopt it": the old listener
+ * cannot be removed, and re-adding one per remount would pile up dead handlers.
+ * @param group - The group the button belongs to.
+ * @param token - This instance's identity, stamped on the node it wired.
+ * @param onClick - The press handler of the LIVE instance.
+ * @returns The button to publish into.
+ */
+function ownButton(group: Element, token: string, onClick: () => void): HTMLButtonElement {
+  const existing = ownButtonNode(group)
   if (existing !== null) {
-    if (existing.dataset.cstSidWired !== '1') {
-      existing.addEventListener('click', onClick)
-      existing.dataset.cstSidWired = '1'
-    }
-    return existing
+    if (existing.getAttribute(OWNER_ATTR) === token) return existing
+    existing.remove()
   }
   const host = hostButton(group)
   const button = document.createElement('button')
@@ -911,7 +1087,7 @@ function ownButton(group: Element, onClick: () => void): HTMLButtonElement {
   // fragment is stable across builds the same way every other anchor is.
   if (host !== null) button.className = host.className
   button.addEventListener('click', onClick)
-  button.dataset.cstSidWired = '1'
+  button.setAttribute(OWNER_ATTR, token)
   if (host !== null) host.parentElement?.insertBefore(button, host.nextSibling)
   else group.appendChild(button)
   return button
@@ -921,33 +1097,47 @@ function ownButton(group: Element, onClick: () => void): HTMLButtonElement {
  * Show the plugin's button for a group, or take it down when it has nothing to
  * do. `knownTotal` pins the total so two publishes within one pass cannot
  * disagree; see the `lockedTotal` note in {@link syncGroup}.
+ * @param group - The group being published.
+ * @param config - This mount's counts, for the "nothing left to fold" test.
+ * @param token - This instance's identity (see {@link ownButton}).
+ * @param onPress - The live instance's press handler.
+ * @param shown - Rows this pass actually left on screen.
+ * @param knownTotal - Total held for this pass, or undefined to read it live.
  */
 function publish(
   group: Element,
+  config: SidebarSessionCountConfig,
+  token: string,
   onPress: (group: Element) => void,
   shown: number,
   knownTotal?: number | null,
 ): void {
-  // The count covers both kinds of remainder; `touched` keeps the button on a
-  // group the user expanded all the way, which is the one case where nothing is
-  // left to reveal but the fold still has to be offered.
-  const pending = pendingCount(group, shown, knownTotal)
+  const { total, pending } = remainder(group, shown, knownTotal)
+  const rows = sessionRows(group).length
+  // A group the user pressed at least once keeps its fold control even with
+  // nothing left to reveal — that is the only way back to the configured block.
+  // Unless the list has nothing left to fold at all: nothing to reveal, no more
+  // rows than the configured block, and every rendered row already accounted
+  // for. The last clause is what keeps this off the grow path — the early
+  // publish passes the block the grow is heading for, so `pending` can read 0
+  // while the host is still handing rows over, and clearing the mark there would
+  // take the 收起 away from a list the user just expanded.
+  if (pending <= 0 && rows <= config.initialCount && (total === null || rows >= total)) clearAttr(group, TOUCHED_ATTR)
   const showButton = pending > 0 || group.hasAttribute(TOUCHED_ATTR)
-  const existing = group.querySelector<HTMLButtonElement>(`button[${OWN_BUTTON_ATTR}]`)
+  const existing = ownButtonNode(group)
   if (!showButton) {
     // A button this instance mounted earlier (the Workspace had more sessions
     // a moment ago, or the count was raised) has to be taken down, not just
-    // skipped — otherwise it keeps its old "收起" over a complete list.
-    if (existing !== null) setStyle(existing, 'display', 'none')
+    // skipped — otherwise it keeps its old "收起" over a complete list. Only
+    // this instance's own: a successor may already own a live button here.
+    if (existing !== null && existing.getAttribute(OWNER_ATTR) === token) setStyle(existing, 'display', 'none')
     return
   }
-  const button = ownButton(group, () => { onPress(group) })
+  const button = ownButton(group, token, () => { onPress(group) })
   setStyle(button, 'display', '')
   const label = buttonText(pending)
   if (button.textContent !== label) button.textContent = label
   setAttr(button, 'aria-expanded', pending > 0 ? 'false' : 'true')
-  setAttr(button, 'data-cst-sid-pending-count', String(pending))
-  setAttr(button, 'data-cst-sid-visible', String(shown))
 }
 
 /**
@@ -959,9 +1149,10 @@ function publish(
  * awaiting frames — and its writes are exactly what a disposed instance must
  * not make: the marker writes would re-hide rows the cleanup had just
  * released, and `publish` would re-create a button whose listener belongs to
- * the dead instance (the live one then finds it already wired and never
- * attaches its own). Checked once before the first write, and again after the
- * waits, because the waits are where the disposal lands.
+ * the dead instance. Checked before the first write, on every landing inside
+ * `growTo`, and again after the waits, because the waits are where the disposal
+ * lands. `token` is the same instance's identity, which keeps `publish` from
+ * adopting or hiding a button a successor instance owns (see {@link ownButton}).
  *
  * Marking the rows a pass produces is not this function's job and not its
  * caller's: every mutation of a group is trimmed by the mount's own observer,
@@ -975,6 +1166,7 @@ async function syncGroup(
   config: SidebarSessionCountConfig,
   onPress: (group: Element) => void,
   alive: () => boolean,
+  token: string,
 ): Promise<void> {
   const trimBefore = trimOf(group, config)
   if (!alive()) return
@@ -1057,7 +1249,10 @@ async function syncGroup(
     // flips to the host's 收起 with the rows.
     let published = false
     const publishOnce = (): void => {
-      if (published || !totalIsKnowable(group)) return
+      // The landing that calls this can arrive after a settings save disposed
+      // the mount (see `growTo`): publishing then would wire a button for a dead
+      // instance and hide the live one behind it.
+      if (published || !alive() || !totalIsKnowable(group)) return
       published = true
       // `knownTotal` is used, not a second `totalSessions` call: the total does
       // not move when the host hands rows over — only the split between
@@ -1071,9 +1266,9 @@ async function syncGroup(
       // they can differ only when it fell short, which is the one case where a
       // figure moving is the honest report that the grow did.
       const settledTarget = visibleTarget(group, sessionRows(group), trimOf(group, config), config)
-      publish(group, onPress, settledTarget, lockedTotal)
+      publish(group, config, token, onPress, settledTarget, lockedTotal)
     }
-    await growTo(group, target, config, publishOnce)
+    await growTo(group, target, config, publishOnce, alive)
     // `growTo` stops the moment the row count reaches the target, and the rows
     // land in the same React commit that rewrites the host button's label — so
     // it can return with the label still reading the previous press. Publishing
@@ -1098,8 +1293,7 @@ async function syncGroup(
   // `trimBefore` (the stored value) is passed, not `target`: `applyTrim`
   // recomputes the same raise and records it, so the two agree on the block
   // while the latch stays measured against what the group had stored.
-  const trim = trimBefore
-  const visible = applyTrim(group, trim, config)
+  const visible = applyTrim(group, trimBefore, config)
   // The host's button was already taken off screen above, before the grow; it
   // stays in the DOM because the host still owns the "show all" state, and its
   // label is not ours to read once growth is under way.
@@ -1108,7 +1302,7 @@ async function syncGroup(
   // The rows actually SHOWN, where the early publish used the block it was
   // heading for — see `publishOnce` for why those two are not the same value
   // and when they part.
-  publish(group, onPress, visible, lockedTotal)
+  publish(group, config, token, onPress, visible, lockedTotal)
 }
 
 /**
@@ -1126,6 +1320,10 @@ export function setupSidebarSessionCount(
     const locale = (ctx as unknown as { locale?: { bind(ns: string): Translate } }).locale
     if (locale !== undefined && typeof locale.bind === 'function') {
       tWorkspace = locale.bind('workspace')
+    } else {
+      // Never keep a previous instance's binding: a stale `t` is a translation
+      // function of a context this mount does not own.
+      tWorkspace = undefined
     }
   } catch {
     tWorkspace = undefined
@@ -1135,6 +1333,12 @@ export function setupSidebarSessionCount(
   let disposed = false
   /** Whether this mount is still live; every write path consults it. */
   const isAlive = (): boolean => !disposed
+  /**
+   * This mount's identity, stamped on every button it wires (see
+   * {@link ownButton}). Unique per mount and per bundle instance, so a button
+   * left by a pass that outlived its mount is replaced rather than adopted.
+   */
+  const token = nextInstanceToken()
 
   /**
    * One pass per group, in flight.
@@ -1289,7 +1493,7 @@ export function setupSidebarSessionCount(
     const next = pendingPress.get(group)
     if (next === undefined) return
     pendingPress.delete(group)
-    if (!group.isConnected || group.querySelector(SESSION_ROW_SELECTOR) === null) return
+    if (!group.isConnected || sessionRows(group).length === 0) return
     applyPress(group, next)
   }
 
@@ -1315,7 +1519,7 @@ export function setupSidebarSessionCount(
     busy.add(group)
     void (async (): Promise<void> => {
       try {
-        await syncGroup(group, config, clicker, isAlive)
+        await syncGroup(group, config, clicker, isAlive, token)
         // A press that arrived while this pass ran is served by the finally
         // below, and ITS pass covers both jobs this tail exists for: the
         // re-read against the settled tree and the published figure. This is
@@ -1327,14 +1531,16 @@ export function setupSidebarSessionCount(
         // catches a press that landed just before the wait ended.
         if (pendingPress.has(group)) return
         // Re-run against the settled tree — and "settled" has to mean the
-        // animation is OVER, not merely that the row count stopped moving.
-        // `AnimatedRows` keeps a departing row in the DOM (still matching
-        // `session:`) for the length of its ~200ms glide, so a pass that runs
-        // during one trims a set that is about to shrink: it saw thirteen rows,
-        // marked the tail, and when the glide finished at ten, three marked rows
-        // had survived. A count-stability test passes mid-glide precisely
-        // because the count really is stable there, so the wait has to clear
-        // the host's own transition duration before the second pass reads.
+        // animation is OVER, not merely that the row count stopped moving. The
+        // host commits the rows a press uncovers in batches over its ~200ms
+        // glide, so a pass that runs during one trims a set that is about to
+        // change: it saw thirteen rows, marked the tail, and when the glide
+        // finished at ten, three marked rows had survived. A count-stability
+        // test passes mid-glide precisely because the count really is stable
+        // there, so the wait has to clear the host's own transition duration
+        // before the second pass reads. (The departing row is not the reason —
+        // rc.2 animates a clone without `data-row-key`, parked outside the
+        // list, which never matches a session row; see `GLIDE_SETTLE_MS`.)
         //
         // It cannot loop: every write in `syncGroup` is change-guarded, so the
         // second pass finds everything already correct, writes nothing, and the
@@ -1351,8 +1557,8 @@ export function setupSidebarSessionCount(
         if (disposed) return
         if (pendingPress.has(group)) return
         // The group may have been folded away while the wait elapsed.
-        if (!group.isConnected || group.querySelector(SESSION_ROW_SELECTOR) === null) return
-        await syncGroup(group, config, clicker, isAlive)
+        if (!group.isConnected || sessionRows(group).length === 0) return
+        await syncGroup(group, config, clicker, isAlive, token)
         // Record what this pass settled, so the next sweep can tell an idle
         // group from one that needs work (see `stateSignature`) — unless the
         // block is still short of its target, which this path can produce just
@@ -1403,11 +1609,14 @@ export function setupSidebarSessionCount(
     // target — but the intent stands: a press measured against a size the list
     // has already outgrown would find nothing to grow, and "show more" would
     // look dead for that one click.
-    const current = visibleTarget(group, sessionRows(group), trimOf(group, config), config)
-    // Two states, decided by whether a press would reveal anything: more
-    // raises the trim by a step and the grow in `syncGroup` follows it, and
-    // none folds back to the initial count. That is what keeps the button from
-    // being a one-way ratchet.
+    const rows = sessionRows(group)
+    const current = visibleTarget(group, rows, trimOf(group, config), config)
+    // Two states, decided by whether a press would reveal anything: more raises
+    // the trim by a step and the grow in `syncGroup` follows it, and none folds
+    // back to the initial count. That is what keeps the button from being a
+    // one-way ratchet — and `hasMore` reads the same `shown` value `publish`
+    // counted with, so a press can never fold a list the button just described
+    // as having sessions left.
     //
     // The trim is deliberately NOT capped at the rendered row count. That
     // count is what the host has been asked for so far, not how many sessions
@@ -1415,7 +1624,7 @@ export function setupSidebarSessionCount(
     // and every press after the first reveals a single row. `syncGroup` grows
     // the host to meet the trim, and stops on its own once the host runs out
     // of button.
-    const next = hasMore(group) ? current + config.expandStep : config.initialCount
+    const next = hasMore(group, Math.min(rows.length, current)) ? current + config.expandStep : config.initialCount
     if (busy.has(group)) {
       pendingPress.set(group, next)
       // Cut the in-flight pass's glide settle short — that wait is the only
@@ -1441,7 +1650,7 @@ export function setupSidebarSessionCount(
     if (disposed) return
     const open: Element[] = []
     for (const group of document.querySelectorAll(GROUP_SELECTOR)) {
-      if (group.querySelector(SESSION_ROW_SELECTOR) !== null) {
+      if (sessionRows(group).length > 0) {
         if (!busy.has(group)) open.push(group)
         continue
       }
@@ -1451,7 +1660,12 @@ export function setupSidebarSessionCount(
       // Skipping the group (as an earlier revision did) therefore left a
       // "show more" under a Workspace the user had just closed, offering to
       // expand a list that is not there.
-      group.querySelector(`button[${OWN_BUTTON_ATTR}]`)?.remove()
+      //
+      // Only this instance's own button, matched by the token it wired it with:
+      // a successor instance may already have published one for this group, and
+      // removing that would take down a live control (same rule as `style-node`).
+      const orphan = ownButtonNode(group)
+      if (orphan !== null && orphan.getAttribute(OWNER_ATTR) === token) orphan.remove()
       // Folding resets the BLOCK but not the REQUIREMENT — the trim and the
       // touched mark go, `SELECTION_ATTR` stays.
       //
@@ -1508,7 +1722,7 @@ export function setupSidebarSessionCount(
       let ok = true
       busy.add(group)
       try {
-        await syncGroup(group, config, clicker, isAlive)
+        await syncGroup(group, config, clicker, isAlive, token)
       } catch {
         ok = false
         // Same reasoning as `runSync`'s catch: a throwing pass must not
@@ -1668,7 +1882,15 @@ export function setupSidebarSessionCount(
     if (disposed) return
     disposed = true
     observer.disconnect()
-    for (const button of document.querySelectorAll(`[${OWN_BUTTON_ATTR}]`)) button.remove()
+    // Only the buttons THIS instance wired. Every live button carries the token
+    // of the mount that published it, so a disposer that lands after a successor
+    // has already claimed a group cannot remove the successor's control — the
+    // same identity rule `style-node.ts` applies to injected stylesheets. A
+    // leftover from a dead instance is replaced by that successor when it next
+    // publishes (see {@link ownButton}), so nothing here has to hunt for one.
+    for (const button of document.querySelectorAll(`[${OWN_BUTTON_ATTR}]`)) {
+      if (button.getAttribute(OWNER_ATTR) === token) button.remove()
+    }
     for (const row of document.querySelectorAll(`[${HIDDEN_ATTR}]`)) clearAttr(row, HIDDEN_ATTR)
     for (const group of document.querySelectorAll(GROUP_SELECTOR)) {
       const host = hostButton(group)

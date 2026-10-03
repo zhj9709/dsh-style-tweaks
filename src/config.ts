@@ -106,10 +106,14 @@ export interface StyleTweaksConfig {
    * pre-animation build did and the plainest reading of "no animation". On:
    * the rows a "show more" press, an opened session, or the locate button
    * brings back fade and grow in over 160ms, and the locate button's own
-   * scroll glides to its row over 280ms instead of jumping. The reveal half is
-   * read only while `sidebarSessionCountEnabled` is on (that is when the tweak
-   * that reveals rows is mounted); the scroll half also governs the locate
-   * button on its own, and its value is kept while the count feature is off.
+   * scroll glides to its row over 280ms instead of jumping.
+   *
+   * Both halves are read only while `sidebarSessionCountEnabled` is on — this
+   * switch is shown in that section, and with the count feature off the sidebar
+   * is DSH's own again, locate button included, so its scroll lands in one
+   * frame too. The value itself is kept while the count feature is off, so
+   * switching it back on restores the user's choice rather than the default.
+   *
    * The animations exist because a host that reports
    * `prefers-reduced-motion: reduce` (this machine does) skips its own row
    * fades and turns `scrollIntoView({ behavior: 'smooth' })` into an instant
@@ -545,7 +549,8 @@ export const STEP_SIDEBAR_SESSION_COUNT = 1
 /**
  * Default: off — "no animation" is what the list did before the ease existed,
  * and what a reader of the switch expects when it is off; the animations are
- * the opt-in (see the field's doc).
+ * the opt-in (see the field's doc). Read only while the custom row count is on,
+ * so the default and the count feature's default both mean "one frame".
  */
 export const DEFAULT_SIDEBAR_SESSION_EXPAND_ANIMATION = false
 
@@ -692,7 +697,10 @@ export interface ResolvedStyleTweaksConfig {
   sidebarSessionInitialCount: number
   /** Session rows one "show more" press adds. */
   sidebarSessionExpandStep: number
-  /** Whether reveals and the locate scroll animate instead of landing at once. */
+  /**
+   * Whether reveals and the locate scroll animate instead of landing at once.
+   * Read only while `sidebarSessionCountEnabled` is on; the value is kept.
+   */
   sidebarSessionExpandAnimation: boolean
   /** Whether the custom history page size is active. */
   historyPageSizeEnabled: boolean

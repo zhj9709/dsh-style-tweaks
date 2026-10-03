@@ -240,11 +240,17 @@
  *
  * ## Specificity
  *
- * The host's `.detailTop` rule is (0,1,0) and none of the four properties above
- * are set by it, so a single `[data-plugin-panel] [class*="_detailTop"]` rule
- * (0,2,0) wins outright. `overflow-anchor` is not a property the host sets on
- * the panel at all, and `[data-plugin-panel]` (0,1,0) is all the second rule
- * needs. No `!important` anywhere.
+ * The host's base `.detailTop` rule is (0,1,0) and none of the four properties
+ * above are set by it, so a single `[data-plugin-panel] [class*="_detailTop"]`
+ * rule (0,2,0) wins for them. It is not the only rule on that class, though: the
+ * host also ships a `[data-platform=darwin] .…_detailTop` rule that adds
+ * `padding-top: calc(28px + var(--dsh-frame-top-clearance, 0px))` at (0,2,0),
+ * i.e. the SAME weight, where source order would decide. Nothing overlaps today
+ * (it sets `padding-top`, this sets `padding-bottom` and three unrelated
+ * properties), but a property added here in the future is not automatically
+ * safe against it. `overflow-anchor` is not a property the host sets on the
+ * panel at all, and `[data-plugin-panel]` (0,1,0) is all the second rule needs.
+ * No `!important` anywhere.
  *
  * ## Lifecycle
  *
@@ -252,13 +258,14 @@
  * body-level `MutationObserver` (gated by `touchesScope`, or a streaming answer
  * would schedule a frame and a document-wide query for every mutation) tracks
  * whichever element currently answers `PANEL_SELECTOR`. The remembered offsets
- * deliberately live outside the panel and survive `detach`, because a page has
- * to keep its position across the panel being unmounted — that is what makes a
- * return from a component still land right after a trip to the chat. Attaching
+ * live in MODULE scope — outside the panel, and outside the mount — because two
+ * things have to be survived: the panel being unmounted (a return from a
+ * component still has to land right after a trip to the chat), and the plugin
+ * itself being re-mounted by the next settings save (`index.tsx` re-mounts every
+ * tweak; an instance-scoped map forgot the whole panel on any toggle). Attaching
  * only ever *reads* the panel's position into the memory for the view it shows
- * and never writes one: opening the panel is entering, and a settings change —
- * which re-mounts every tweak — therefore cannot yank the view out from under
- * the user either.
+ * and never writes one: opening the panel is entering, and a settings change
+ * therefore cannot yank the view out from under the user either.
  */
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
@@ -266,13 +273,17 @@ import { touchesScope } from '../mutation-scope.ts'
 import { claimStyleNode, releaseStyleNode } from '../style-node.ts'
 
 /** The plugin manager's scrollport. Host-authored attribute, not a hashed class. */
-export const PANEL_SELECTOR = '[data-plugin-panel]'
+const PANEL_SELECTOR = '[data-plugin-panel]'
 
 /**
  * The list view's header. The only view with no host-authored identity
- * attribute of its own, and the only one matched by a class fragment — which is
- * safe because `pageHead` is declared once across DSH and this is its only
- * position in the tree.
+ * attribute of its own, and the only one matched by a class fragment. That
+ * fragment is NOT unique across DSH — `dsh-client-ui-schedule` declares
+ * `_pageHeading`, which `[class*="_pageHead"]` also matches — and the reason it
+ * is safe here is narrower than uniqueness: it is pinned by `:scope >` to the
+ * plugin panel's own direct children, where the host's list header is the only
+ * thing that can match. A second class guess in this file would not inherit
+ * that protection.
  */
 const LIST_HEAD_SELECTOR = ':scope > [class*="_pageHead"]'
 
@@ -334,7 +345,7 @@ function parentKey(key: string): string | undefined {
 }
 
 /** Stylesheet id; also the `data-tweak-css` key of the injected node. */
-export const PLUGIN_PANEL_SCROLL_CSS_ID = 'cst-plugin-panel-scroll'
+const PLUGIN_PANEL_SCROLL_CSS_ID = 'cst-plugin-panel-scroll'
 
 /**
  * How long a restore may keep retrying while its view grows.
@@ -432,6 +443,27 @@ function setGlobalCleanup(fn: (() => void) | undefined): void {
 }
 
 /**
+ * Every view's remembered offset, keyed by `viewKey`, applied only when that
+ * view is returned to (`parentKey`).
+ *
+ * MODULE scope, not per-mount, and that is load-bearing twice over. The manager
+ * is a global panel: switching to the chat unmounts it, and a return after that
+ * must still land where the page was left — so the map cannot live on `panel`.
+ * And the plugin's own mount is not stable either: `index.tsx` disposes and
+ * re-mounts every tweak whenever any settings change arrives (only
+ * `closedWorkspaces` and `historyPageSize*` are exempt, see `sameMountInputs`),
+ * so an instance-scoped map silently forgot every page except the one on screen
+ * at the moment the user saved a setting — after which 返回 landed at the top,
+ * the exact bug this tweak exists to fix. A module-level map survives that, and
+ * survives the panel being unmounted; a hot-reloaded bundle starts fresh, which
+ * is the right granularity for a scroll position.
+ *
+ * The map is bounded by how many plugins, official items and component rows
+ * exist, and each entry is one number.
+ */
+const offsets = new Map<string, number>()
+
+/**
  * Mount the tweak: pin the detail page's header, and remember where each view
  * of the panel was scrolled to.
  * @param _ctx - client context (unused; signature parity with JS tweaks).
@@ -448,17 +480,6 @@ export function setupPluginPanelScroll(_ctx: ClientContext): () => void {
 
   /** The scrollport currently being tracked, if the manager panel is open. */
   let panel: HTMLElement | undefined
-  /**
-   * Every view's remembered offset, keyed by `viewKey`, applied only when that
-   * view is returned to (`parentKey`).
-   *
-   * Deliberately NOT cleared on detach: the manager is a global panel, so
-   * switching to the chat and back unmounts it, and a return that happens after
-   * that must still land where the page was left. The map is bounded by how many
-   * plugins, official items and component rows exist, and each entry is one
-   * number.
-   */
-  const offsets = new Map<string, number>()
   /** The key of the view on screen, or undefined while it is unidentifiable. */
   let currentKey: string | undefined
   /** A restore frame still queued, if any. */
@@ -531,13 +552,19 @@ export function setupPluginPanelScroll(_ctx: ClientContext): () => void {
    * they stay on the view. `releaseHeight` collects the rest — on the way out of
    * the view, where a clamp cannot be seen.
    *
+   * `realMax` is the view's OWN maximum scroll, and it is SIGNED: `scrollHeight`
+   * is floored at `clientHeight` by the browser, so a view whose content is
+   * shorter than the scrollport has a negative own range, and clamping that at
+   * zero would under-count what the reader's position needs by exactly
+   * `clientHeight - scrollHeight` — shrinking the padding below the position and
+   * letting the browser drag them up, the one thing this function promises never
+   * to do.
+   *
    * A no-op when nothing is on loan, so every exit path can call it.
    */
   const repayHeight = (): void => {
     if (padded === undefined) return
-    const realMax = panel === undefined
-      ? 0
-      : Math.max(0, panel.scrollHeight - panel.clientHeight - paddedPx)
+    const realMax = panel === undefined ? 0 : panel.scrollHeight - panel.clientHeight - paddedPx
     const deficit = panel === undefined ? 0 : Math.max(0, panel.scrollTop - realMax)
     if (deficit > 0) {
       if (deficit === paddedPx) return
@@ -640,7 +667,16 @@ export function setupPluginPanelScroll(_ctx: ClientContext): () => void {
     const deadline = performance.now() + RESTORE_DEADLINE_MS
     /** When the height last grew; a quiet spell longer than QUIET_MS ends it. */
     let grownAt = performance.now()
-    let previousMax = -1
+    /**
+     * The view's own range on the previous frame.
+     *
+     * `-Infinity`, not `-1`: the own range is SIGNED (see `repayHeight`), so a
+     * view shorter than the scrollport reports a negative one, and a `-1`
+     * sentinel would call every one of those frames "not growing" — the quiet
+     * spell would then be measured from the start and the loop would stop before
+     * the view had a chance to grow into the offset.
+     */
+    let previousMax = Number.NEGATIVE_INFINITY
     /** Write the position, unless the panel already holds it. */
     const write = (next: number): void => {
       if (panel === undefined || panel.scrollTop === next) return
@@ -651,11 +687,26 @@ export function setupPluginPanelScroll(_ctx: ClientContext): () => void {
       frame = 0
       if (disposed || panel === undefined) return
       const now = performance.now()
+      // A scrollport that cannot lay out — the panel mounted but hidden, so
+      // `clientHeight` is 0 — has no reachable offset at all. Borrowing height
+      // for it would leave the padding on a view that never scrolled (the quiet
+      // branch returns without repaying), which then shows as a phantom blank
+      // tail the first time the panel is revealed. Give back whatever is on loan
+      // and let the next attach, when the view is measurable, do the work.
+      if (panel.clientHeight === 0) {
+        releaseHeight()
+        return
+      }
       const max = Math.max(0, panel.scrollHeight - panel.clientHeight)
       // What the view holds on its own, the borrowed height taken back out:
       // growth has to be measured on the view's own content, or the padding this
       // loop just added would read as a view that had already finished growing.
-      const realMax = Math.max(0, max - paddedPx)
+      // SIGNED: `scrollHeight` is floored at `clientHeight`, so a view shorter
+      // than the scrollport has a negative own range, and clamping it at zero
+      // under-borrows by exactly `clientHeight - scrollHeight` — the write below
+      // then lands short of the remembered offset, which is the one promise the
+      // borrowing exists to keep.
+      const realMax = max - paddedPx
       // A panel that is not where this restore last put it was moved by something
       // else — a clamp, a programmatic scroll from the host or another plugin, or
       // a hand on the wheel. All of them are positions to respect, and none of
@@ -673,8 +724,13 @@ export function setupPluginPanelScroll(_ctx: ClientContext): () => void {
         // collects it on the way out), because taking it back would move the
         // reader.
         if (now >= deadline) return
+        const before = paddedPx
         repayHeight()
-        if (paddedPx > 0) frame = window.requestAnimationFrame(step)
+        // Re-arm only while repayment is actually making progress: with the loan
+        // already down to what the position needs (`deficit === paddedPx`),
+        // `repayHeight` is a no-op and every further frame costs a forced layout
+        // for nothing. The rest of the loan is collected on the way out.
+        if (paddedPx > 0 && paddedPx !== before) frame = window.requestAnimationFrame(step)
         return
       }
       if (realMax >= target) {
@@ -687,10 +743,15 @@ export function setupPluginPanelScroll(_ctx: ClientContext): () => void {
       }
       borrowHeight(target - realMax)
       write(Math.min(target, realMax + paddedPx))
+      // Growth and the two exits are checked as separate steps rather than as an
+      // if/else: a view that grows on EVERY frame would otherwise never reach the
+      // deadline test, and the loop — one forced layout plus one `scrollTop`
+      // write per frame — would have no bound at all.
       if (realMax > previousMax) {
         previousMax = realMax
         grownAt = now
-      } else if (now - grownAt >= QUIET_MS || now >= deadline) {
+      }
+      if (now - grownAt >= QUIET_MS || now >= deadline) {
         // Settled, and still shorter than the offset: a view that shrank since
         // the offset was remembered. The borrowed height stays exactly as large
         // as the part of the offset the view cannot hold — the reader keeps
@@ -752,6 +813,18 @@ export function setupPluginPanelScroll(_ctx: ClientContext): () => void {
    * content then holds 440): without the write the landing is 440, the bottom of
    * the list; with it, 0. A memory of 0 therefore goes through `openAtTop`,
    * which writes the top the same way entering does.
+   *
+   * The observer watches the identity ATTRIBUTES as well as the child list, and
+   * the attribute half is not decoration. Each view is a fixed-index child of
+   * the scrollport and the detail views are all the same `div` (the host renders
+   * `[RowDetail-or-null, PackageDetail-or-null, ItemDetail-or-null, list]`), so
+   * React reuses that node when the panel jumps straight from one package to
+   * another — `ctx.pluginNavigation.openBundle` from any plugin's detail-page
+   * action — and only rewrites `data-plugin-detail`. With `childList` alone the
+   * replacement happens INSIDE the reused node and the panel level never
+   * changes: the key would stay on the old package, so entering the new one
+   * would not open at its top (contradicting the rule above), and every later
+   * scroll would be filed under the old package's name.
    */
   const viewObserver = new MutationObserver(() => {
     if (panel === undefined) return
@@ -800,7 +873,13 @@ export function setupPluginPanelScroll(_ctx: ClientContext): () => void {
     next.addEventListener('scroll', yieldToUser, { capture: true, passive: true })
     next.addEventListener('click', yieldToUser, true)
     next.addEventListener('keydown', yieldToUser, true)
-    viewObserver.observe(next, { childList: true })
+    viewObserver.observe(next, {
+      childList: true,
+      // Same-index view swaps (package → package, `openBundle`) reuse the node
+      // and only rewrite its identity attribute — see the observer's own note.
+      attributes: true,
+      attributeFilter: DETAIL_KEY_ATTRS.map(([attribute]) => attribute),
+    })
   }
 
   const scan = (): void => {
@@ -848,11 +927,12 @@ export function setupPluginPanelScroll(_ctx: ClientContext): () => void {
     if (disposed) return
     disposed = true
     bodyObserver.disconnect()
-    // Both queued frames are cancelled below, so neither callback can outlive
-    // the disposer and re-arm itself against a torn-down tweak.
+    // The queued scan frame is cancelled below so its callback cannot outlive
+    // the disposer and re-arm itself against a torn-down tweak. `detach` already
+    // drops the restore frame and gives the borrowed height back, so it is the
+    // only teardown the panel itself needs.
     if (scanFrame !== 0) window.cancelAnimationFrame(scanFrame)
     detach()
-    cancelRestore()
     removeStyles()
     if (getGlobalCleanup() === cleanup) setGlobalCleanup(undefined)
   }
