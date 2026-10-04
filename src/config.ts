@@ -173,10 +173,11 @@ export interface StyleTweaksConfig {
    */
   keepTurnRail?: boolean
   /**
-   * Remove the 16 px gap above highlighted code blocks so the highlighted
-   * box sits flush with the preceding paragraph, list item, or heading.
-   * The wrapper (`.md-code-block` in `CodeBlock.module.css`) ships with
-   * `margin: 16px 0`; this tweak overrides only the top edge.
+   * Collapse the padding above the first line of code inside highlighted
+   * code blocks, so the code hugs the top edge of its box (the card's
+   * header row in the chat). Only the inside of the box is touched: the
+   * spacing between a code block and the text before and after it stays
+   * exactly as the host draws it.
    */
   codeBlockFlushTop?: boolean
   /**
