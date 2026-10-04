@@ -10,32 +10,57 @@
  *
  * The pills' percent comes from a module-internal formatter in
  * dsh-client-ui-chat — not reachable from a plugin. The row mounts on the
- * same `conversation.composer.dock` list-slot cell as the shipped pills
- * (id `stats`), so the plugin re-renders it (a faithful port of the pills
- * and their dialog surface, riding the same projections) and lets the slot
- * system's own shadowing do the replacing: a registration at `priority: -1`
- * wins the cell from the shipped `priority: 0` entry; disposing restores
- * the shipped pills.
+ * same `conversation.composer.dock` list-slot cell as the shipped pills, so
+ * the plugin re-renders it (a faithful port of the pills and their dialog
+ * surface, riding the same projections) and lets the slot system's own
+ * shadowing do the replacing: a registration at a lower `priority` wins the
+ * cell from the shipped `priority: 0` entry; disposing restores the shipped
+ * pills.
+ *
+ * ## Which cells to claim (0.2.1-alpha.1 split the row)
+ *
+ * Through 0.2.0 one `stats` entry carried both pills, so this tweak claimed
+ * that one cell and re-rendered the pair. 0.2.1-alpha.1 gave each pill its
+ * own dock entry — `activity` (counts, speed) and `usage` (tokens, cache
+ * hit) — and documents the replacement contract: claim the same id at the
+ * same `order` with a lower `priority` (ui-chat README). The cache-hit share
+ * only exists in the `usage` pill, so on those hosts the tweak claims that
+ * one cell and leaves the shipped activity pill alone: the smallest shadow
+ * that does the job, and no second copy of the host's counts/speed logic to
+ * drift. `composerStatsCells` reads which generation the host ships.
  *
  * ## Layering with the legacy-stats-line tweak
  *
- * Both tweaks shadow the same cell, so the legacy line registers one step
- * lower (`priority: -2`) and wins whenever both are on — the pills row here
- * then sits shadowed (unrendered, zero cost) and takes the cell back the
- * moment the legacy line is turned off. The toggle stays visible in Settings
- * either way: the legacy line reads the same flag for its own cache-hit
- * decimals.
+ * Both tweaks shadow the same cells, so the legacy line registers one
+ * priority step lower (`-2`) and wins whenever both are on — whatever this
+ * tweak claimed then sits shadowed (unrendered, zero cost) and takes the
+ * cell back the moment the legacy line is turned off. On split hosts the
+ * line claims `activity` and suppresses `usage` outright (the line carries
+ * the token figures itself), so this tweak's `usage` cell is covered there
+ * too. The toggle stays visible in Settings either way: the legacy line
+ * reads the same flag for its own cache-hit decimals.
  *
  * Fidelity notes: data rides the same durable projections (`sessionStats`,
  * `tokenUsage`) — no window fold, so without the projection the row renders
  * nothing, like the legacy line. The dialog surface and placement reuse
  * DSH's own primitives (`useAnchoredPosition`, `useDismissOnOutsidePointer`)
- * and the ported `stat-dialog` skin. Copy lives in the plugin namespace
- * (`pills.*` keys). The root keeps the `data-composer-stats` marker so
- * pre-0.1.6-alpha.2 hosts' bottom-clearance rule engages exactly as it does
- * for the shipped row (alpha.2 dropped the rule; the attribute is inert
- * there). The row skin follows the dock generation the host ships — see
- * `composer-dock.ts` for the two-skin arrangement.
+ * and the ported `stat-dialog` skin, including 0.2.1's outside-CLICK close
+ * (see `useStatDialog`), which is what lets a keyboard activation of the
+ * sibling pill swap dialogs instead of stacking them. Copy lives in the
+ * plugin namespace (`pills.*` keys). The dialog skin is the plugin's own
+ * (`cst-pilldlg-*`), so `opaque-stat-dialogs` covers it by name. The row
+ * root keeps the `data-composer-stats` marker so pre-0.1.6-alpha.2 hosts'
+ * bottom-clearance rule engages exactly as it does for the shipped row
+ * (alpha.2 dropped the rule; the attribute is inert there), while the
+ * standalone `usage` entry carries `data-composer-stat="usage"` — the
+ * per-pill id 0.2.1's shipped pills wear — instead. The row skin follows the
+ * dock generation the host ships — see `composer-dock.ts` for the two-skin
+ * arrangement.
+ *
+ * One known divergence, older than the split: 0.2.0's `performanceUsage`
+ * preference (`compact` = plain speed and cache-hit readings, no dialogs) is
+ * not mirrored — the port renders the detailed pill on every host, which is
+ * also what it did while it owned the whole row. DSH's default is `detailed`.
  *
  * @module dsh-style-tweaks/client/tweaks/pills-cache-hit-decimals
  */
@@ -56,7 +81,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-session-stats/client'
 import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { probeComposerDockLayout } from './composer-dock.ts'
+import { composerStatsCells, probeComposerDockLayout } from './composer-dock.ts'
 import { billedInputTokens, formatCacheHitPercent } from './stats-cache-hit.ts'
 import { claimStyleNode, releaseStyleNode } from '../style-node.ts'
 
@@ -155,6 +180,12 @@ interface StatDialogSeat {
  * One trigger-anchored dialog seat: open state, viewport-clamped placement,
  * outside-close (ported verbatim from stat-dialog.ts over the same
  * primitives; the seat does not own state — the row's exclusive slot does).
+ *
+ * The close-on-outside-CLICK listener is 0.2.1's own addition: a keyboard
+ * activation of a sibling trigger fires `click` without `pointerdown`, so
+ * without it two dialogs could stack (on split hosts the sibling pill is the
+ * host's, whose seat closes on that click). The capture phase lets this
+ * dialog close before the sibling opens.
  */
 function useStatDialog(controlled: PillDialog): StatDialogSeat {
   const { open, setOpen } = controlled
@@ -176,8 +207,19 @@ function useStatDialog(controlled: PillDialog): StatDialogSeat {
     const onKeyDown = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') setOpen(false)
     }
+    const onClick = (e: MouseEvent): void => {
+      if (e.target instanceof Node
+        && rootRef.current?.contains(e.target) !== true
+        && panelRef.current?.contains(e.target) !== true) {
+        setOpen(false)
+      }
+    }
     document.addEventListener('keydown', onKeyDown)
-    return () => { document.removeEventListener('keydown', onKeyDown) }
+    document.addEventListener('click', onClick, true)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('click', onClick, true)
+    }
   }, [open, setOpen])
 
   return { open, setOpen, rootRef, panelRef, pos }
@@ -302,10 +344,16 @@ function TimePill({ stats, t, dialog }: {
 }
 
 /** Database pill: total tokens + cache hit at two decimals; opens the usage dialog. */
-function UsagePill({ usage, t, dialog }: {
+function UsagePill({ usage, t, dialog, entry = false }: {
   usage: TokenUsageProjection
   t: PillsTranslate
   dialog: PillDialog
+  /**
+   * Render as the standalone `usage` dock entry (0.2.1's split pills) rather
+   * than as a pill inside this tweak's own row: the root becomes the entry
+   * root, so it carries the dock entry's own text tier and its cell id.
+   */
+  entry?: boolean
 }) {
   const seat = useStatDialog(dialog)
   const billed = billedInputTokens(usage)
@@ -317,7 +365,11 @@ function UsagePill({ usage, t, dialog }: {
   const cacheHitText = cacheHit !== null ? t('pills.cacheHit', { percent: cacheHit }) : null
   const exactCount = (value: number): string => t('pills.turnUsage.count', { count: formatExactTokens(value, t) })
   return (
-    <span ref={seat.rootRef} className="cst-pills-anchor">
+    <span
+      ref={seat.rootRef}
+      className={entry ? 'cst-pills-anchor cst-pills-entry' : 'cst-pills-anchor'}
+      {...(entry ? { 'data-composer-stat': 'usage' } : {})}
+    >
       <button
         type="button"
         className="cst-pills-pill"
@@ -367,14 +419,14 @@ function UsagePill({ usage, t, dialog }: {
   )
 }
 
-/** Full props of the shadowing dock entry (standard kit + plugin locale seat). */
-type LegacyStatsPillsProps = PropsRuntime<'conversation.composer.dock'> & PropsLocale<'style-tweaks'>
+/** Full props of either shadowing dock entry (standard kit + plugin locale seat). */
+type StatsDockEntryProps = PropsRuntime<'conversation.composer.dock'> & PropsLocale<'style-tweaks'>
 
 /**
  * The 0.1.5 pills row with the cache hit at two decimals. Renders nothing
  * until a figure exists (no projection → no row, like the legacy line).
  */
-export const LegacyStatsPills = memo(function LegacyStatsPills({ useProjection, t }: LegacyStatsPillsProps) {
+export const LegacyStatsPills = memo(function LegacyStatsPills({ useProjection, t }: StatsDockEntryProps) {
   const stats = useProjection('sessionStats')
   const usage = useProjection('tokenUsage')
   // One exclusive slot for both dialogs: opening either pill closes the other.
@@ -415,6 +467,23 @@ export const LegacyStatsPills = memo(function LegacyStatsPills({ useProjection, 
   )
 })
 
+/**
+ * The 0.2.1-alpha.1+ `usage` dock cell: the same two-decimal usage pill, as
+ * its own entry in the shipped row. Only this pill is replaced there — the
+ * cache hit is the one thing the tweak changes, and the `activity` pill
+ * carries none of it, so the shipped counts/speed pill stays as it is. The
+ * dialog is this entry's own (the shipped split pills work the same way), so
+ * opening it is a state change of one entry, not of a shared row slot.
+ */
+export const UsageDockEntry = memo(function UsageDockEntry({ useProjection, t }: StatsDockEntryProps) {
+  const [open, setOpen] = useState(false)
+  const usage = useProjection('tokenUsage')
+  // Gated on actual token activity, exactly like the shipped pill: a session
+  // whose steps all settled without billing shows no usage pill at all.
+  if (usage === undefined || (billedInputTokens(usage) === 0 && usage.outputTokens === 0)) return null
+  return <UsagePill usage={usage} t={t} entry dialog={{ open, setOpen }} />
+})
+
 // ── Row + dialog skin (ported from StatsPills.module.css / stat-dialog.module.css) ──
 
 /**
@@ -432,6 +501,11 @@ const PILLS_CSS = `
 .cst-pills-root{display:flex;justify-content:center;gap:12px;min-width:0;max-width:100%;box-sizing:border-box;font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(20px + var(--dsh-content-font-delta-secondary,0px))}
 .cst-pills-root[data-cst-dock-legacy]{width:100%;max-width:var(--dsh-chat-content-width,748px);margin:0 auto;padding:4px calc(var(--dsh-composer-side-clearance,16px) + 16px) 0}
 .cst-pills-anchor{display:inline-flex;min-width:0}
+/* Standalone dock entry (0.2.1-alpha.1's split pills): the row root that
+   carries the text tier in the row layout is not in the tree here, and the
+   shipped entry root wears the 12/20 tier itself — the entry must match it
+   or the two pills under the composer differ by a pixel of type size. */
+.cst-pills-entry{font-size:calc(var(--dsh-content-font-size-secondary,13px) - 1px);line-height:calc(20px + var(--dsh-content-font-delta-secondary,0px))}
 .cst-pills-pill{display:inline-flex;align-items:center;gap:6px;box-sizing:border-box;max-width:100%;padding:1px 8px;border:none;border-radius:24px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-variant-numeric:tabular-nums;line-height:inherit;white-space:nowrap}
 .cst-pills-pill svg{width:14px;height:14px;flex:none}
 button.cst-pills-pill{cursor:pointer}
@@ -463,21 +537,43 @@ function installPillsStyles(): () => void {
 }
 
 /**
- * Mount the two-decimal pills row: inject the ported skin, then shadow the
- * shipped `stats` dock entry one priority step above the legacy line (which
- * sits at -2 and wins when both tweaks are on). The `slots.inject`
- * controller re-registers across slot re-declarations and its disposer
+ * Mount the two-decimal usage pill: inject the ported skin, then claim the
+ * host's stats cells (see `composerStatsCells`) — the `usage` cell alone on
+ * 0.2.1-alpha.1's split pills, the combined `stats` cell on earlier hosts —
+ * at `priority: -1`, one step above the legacy line (which sits at -2 and
+ * wins when both tweaks are on). The `slots.inject` controller re-registers
+ * across slot re-declarations (composer remounts, HMR) and its disposer
  * restores the shipped pills.
  */
 export function setupPillsCacheHitDecimals(ctx: ClientContext): () => void {
   const disposeStyles = installPillsStyles()
-  const disposeShadow = ctx.slots.inject('conversation.composer.dock', () =>
-    ctx.slots.register({
+  const disposeShadow = ctx.slots.inject('conversation.composer.dock', () => {
+    const cells = composerStatsCells(ctx)
+    // A split row (more than one cell) keeps its pill-per-cell shape: claim
+    // only the `usage` cell and leave `activity` to the host. One cell means
+    // the pre-0.2.1 shape, where this tweak owns the whole row — including
+    // the degenerate host that ships a single pill cell under an id this
+    // plugin does not know: the row still renders both figures, and no cell
+    // is left holding a second copy.
+    const usage = cells.length > 1 ? cells.find(cell => cell.id === 'usage') : undefined
+    if (usage !== undefined) {
+      return ctx.slots.register({
+        name: 'conversation.composer.dock',
+        id: usage.id,
+        order: usage.order,
+        priority: -1,
+        locale: 'style-tweaks',
+      }, UsageDockEntry)
+    }
+    const single = cells[0]
+    return ctx.slots.register({
       name: 'conversation.composer.dock',
-      id: 'stats',
+      id: single.id,
+      order: single.order,
       priority: -1,
       locale: 'style-tweaks',
-    }, LegacyStatsPills))
+    }, LegacyStatsPills)
+  })
   return () => {
     disposeShadow()
     disposeStyles()

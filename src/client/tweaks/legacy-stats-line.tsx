@@ -14,16 +14,23 @@
  *
  * ## Why slot shadowing
  *
- * Both presentations mount the same way: a `list` entry on the
- * `conversation.composer.dock` slot under the id `stats`. A list cell
- * renders its lowest-priority live entry (see `SlotCore.register`), so
- * re-registering `id: 'stats'` at `priority: -2` shadows the shipped pills
- * for exactly as long as the registration lives; disposing it hands the
- * cell straight back — no CSS hiding, no DOM patching, and a crashed entry
- * retires itself so the pills reappear. The `pills-cache-hit-decimals`
- * tweak shadows the same cell one step higher (`-1`), so with both tweaks
- * on, this line wins; that row then sits shadowed (unrendered) and takes
- * the cell back when this tweak is turned off.
+ * Both presentations mount the same way: list entries on the
+ * `conversation.composer.dock` slot — delivered through 0.2.0 as one `stats`
+ * cell carrying both pills, and from 0.2.1-alpha.1 as a cell per pill
+ * (`activity`, `usage`), which is why the cells are read off the ledger
+ * (`composerStatsCells`) rather than assumed. A list cell renders its
+ * lowest-priority live entry (see `SlotCore.register`), so re-registering a
+ * cell at `priority: -2` shadows the shipped entry for exactly as long as
+ * the registration lives; disposing it hands the cell straight back — no CSS
+ * hiding, no DOM patching, and a crashed entry retires itself so the shipped
+ * entry reappears. The line claims the first cell (the dock's own first row,
+ * where the whole row used to be) and suppresses any further stats cell with
+ * a null renderer: the line already carries every figure those pills show —
+ * including the token totals — so leaving one in place would print them
+ * twice. The `pills-cache-hit-decimals` tweak shadows the same cells one
+ * step higher (`-1`), so with both tweaks on, this line wins; those cells
+ * then sit shadowed (unrendered) and take themselves back when this tweak is
+ * turned off.
  *
  * ## Data plane
  *
@@ -56,7 +63,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-session-stats/client'
 import type {} from '@deepseek-ai/dsh-token-meter/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { probeComposerDockLayout } from './composer-dock.ts'
+import { composerStatsCells, probeComposerDockLayout } from './composer-dock.ts'
 import { billedInputTokens, formatCacheHitPercent } from './stats-cache-hit.ts'
 import { claimStyleNode, releaseStyleNode } from '../style-node.ts'
 
@@ -235,26 +242,49 @@ function installLegacyStatsStyles(): () => void {
 }
 
 /**
- * Mount the legacy line: inject the row skin, then shadow the shipped
- * `stats` dock entry (same id; the lowest live priority in the cell renders,
- * and `-2` also outranks the pills-cache-hit-decimals row at `-1` when both
- * tweaks are on). `twoDecimals` is the `pillsCacheHitDecimals` setting,
- * passed through the registration's inject face — the live-sync effect
- * remounts every tweak on any settings change, so the registration (and the
- * flag with it) always reflects the current value. The `slots.inject`
- * controller re-registers across slot re-declarations (composer remounts,
- * HMR) and its disposer restores the shipped pills.
+ * Nothing: the inert claim that keeps a further stats cell from rendering
+ * beside the line. Used for 0.2.1-alpha.1's second pill cell (`usage`) —
+ * the line already prints its token figures, so the cell is claimed and
+ * left empty rather than handed back to the shipped pill.
+ */
+function SuppressedStatsCell(): null {
+  return null
+}
+
+/**
+ * Mount the legacy line: inject the row skin, then claim the host's stats
+ * cells (see `composerStatsCells`) at `priority: -2` — the line in the first
+ * cell, `SuppressedStatsCell` in the rest, so the row reads as one line
+ * whether the host ships one stats entry or two. `-2` also outranks the
+ * pills-cache-hit-decimals rows at `-1` when both tweaks are on.
+ * `twoDecimals` is the `pillsCacheHitDecimals` setting, passed through the
+ * registration's inject face — the live-sync effect remounts every tweak on
+ * any settings change, so the registration (and the flag with it) always
+ * reflects the current value. The cells are resolved inside the `slots.inject`
+ * callback, which re-registers across slot re-declarations (composer
+ * remounts, HMR) and whose disposer restores the shipped pills.
  */
 export function setupLegacyStatsLine(ctx: ClientContext, twoDecimals: boolean): () => void {
   const disposeStyles = installLegacyStatsStyles()
-  const disposeShadow = ctx.slots.inject('conversation.composer.dock', () =>
-    ctx.slots.register({
+  const disposeShadow = ctx.slots.inject('conversation.composer.dock', function* () {
+    const [first, ...further] = composerStatsCells(ctx)
+    yield ctx.slots.register({
       name: 'conversation.composer.dock',
-      id: 'stats',
+      id: first.id,
+      order: first.order,
       priority: -2,
       locale: 'style-tweaks',
       inject: () => ({ twoDecimals }),
-    }, LegacyStatsLine))
+    }, LegacyStatsLine)
+    for (const cell of further) {
+      yield ctx.slots.register({
+        name: 'conversation.composer.dock',
+        id: cell.id,
+        order: cell.order,
+        priority: -2,
+      }, SuppressedStatsCell)
+    }
+  })
   return () => {
     disposeShadow()
     disposeStyles()
