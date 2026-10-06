@@ -92,6 +92,14 @@ export interface StyleTweaksConfig {
    * Rows a Workspace's session list shows before any expansion, used only
    * while `sidebarSessionCountEnabled` is on. Clamped to a minimum of 5 on
    * read (below the stock fold the list would only ever grow). No upper bound.
+   *
+   * The count is one of SLOTTED sessions. The only row outside it is the
+   * provisional New Session row — a session that has not sent its first message
+   * yet — which stays visible without spending a configured row. A running
+   * session, including a history session the user has just sent a message in,
+   * counts like any other and folds away past the block; that is one deliberate
+   * departure from the host's own `collapsedSessionRows`, which exempts
+   * `running` (and `runningSubagentCount > 0`) as well as `blank`.
    */
   sidebarSessionInitialCount?: number
   /**

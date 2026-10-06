@@ -79,6 +79,36 @@
  * yet. There is no honest figure to put up then, so that pass reads it the
  * settled way.
  *
+ * ## The one row that never spends a slot
+ *
+ * The provisional New Session row — the blank row a Workspace shows after the
+ * user presses "New session" and before the first message is sent — is always
+ * visible and never consumes one of the configured rows. Reported 2026-10-06:
+ * creating a session took one of the configured slots and pushed a real session
+ * out of the list, which read as "新建会话占用了设置的条数". The host's own
+ * `collapsedSessionRows` excludes that row for the same reason (its `blank`
+ * clause), so the two folds agree on it.
+ *
+ * Running sessions are deliberately NOT exempt (the user's second report, same
+ * day): a history session that was just sent a message is a real session and
+ * has to keep spending a slot, so it folds away like any other row once it sits
+ * past the block. The host's own fold does exempt `running` (and
+ * `runningSubagentCount > 0`), and this is the one place the tweak knowingly
+ * departs from it — the configured count is the user's count of sessions, not a
+ * copy of the host's idle-quota arithmetic.
+ *
+ * Everything the tweak measures is a SLOTTED count: the rows that spend a slot.
+ * `totalSessions`, `applyTrim`, `growTo`, `blockIsShort`, `clicker` and the
+ * sweep all read that unit, so the published remainder (`total − shown`) stays
+ * honest. That subtraction still works with the host's own label as one half of
+ * `total`: the label counts sessions above the host's idle limit, and a blank
+ * row is never behind that limit (the host renders it unconditionally) — so
+ * `notRendered + rendered slotted rows` is the slotted total exactly.
+ *
+ * The exemption is read from the session store's `SessionSummary.blank`. A
+ * store that cannot be read exempts nothing and the tweak behaves exactly as it
+ * did before this rule existed.
+ *
  * ## What the tweak does not do
  *
  * It never hides the rows above a selected one. Opening a session — including
@@ -201,6 +231,96 @@ type Translate = (key: string, params?: Record<string, string | number>) => stri
 let tWorkspace: Translate | undefined
 
 /**
+ * The app's session-list store, read-only — the one fact the DOM cannot state:
+ * whether a row is the provisional New Session row, which the trim must leave
+ * on screen without spending a configured slot on it.
+ *
+ * The host's own `collapsedSessionRows` in `dsh-client-ui-workspace` admits
+ * `session.blank || session.running || session.runningSubagentCount > 0` before
+ * it starts counting idle rows. This tweak mirrors the FIRST clause only, at the
+ * user's request (2026-10-06): a running session is a real session and has to
+ * keep spending a slot, so a history session that was just sent a message — the
+ * case that makes it run — stays inside the configured count and folds away like
+ * any other row when it sits past the block. What the host's rule is needed for
+ * is the row the user has only just created: counting it took one of the
+ * configured slots and pushed a real session out of the list.
+ *
+ * `blank` is a field of `SessionSummary` (session controller client,
+ * `sessions/service.d.ts`); `runningSubagentCount` is NOT — the workspace
+ * browser derives it from the subagent catalog — so that host clause was never
+ * reachable from here anyway.
+ */
+interface SessionSummaryLike {
+  readonly blank?: boolean | undefined
+}
+interface SessionListLike {
+  getSnapshot(): { readonly byId: Readonly<Record<string, SessionSummaryLike | undefined>> }
+}
+let sessionList: SessionListLike | undefined
+/**
+ * The instance token that published {@link sessionList}, so a disposer can tell
+ * its OWN binding from a successor's.
+ *
+ * Reference equality cannot do that job here: `ctx.get('sessions').list` is the
+ * same object for every mount of the same context, so a late disposer belonging
+ * to an old instance would match a successor's binding and clear it — after
+ * which every row answers "not exempt" and the New Session row starts spending a
+ * configured slot again, silently and without self-healing, until the next
+ * remount or reload (review finding 2026-10-06). This is the same identity rule
+ * {@link ownButton} applies to its buttons, for the same reason.
+ */
+let sessionListOwner: string | undefined
+
+/** The Session id behind one sidebar row, off the host's own `session:<id>` key. */
+function sessionIdOf(row: Element): string | undefined {
+  const key = row.getAttribute('data-row-key')
+  if (key === null || !key.startsWith('session:')) return undefined
+  return key.slice('session:'.length)
+}
+
+/**
+ * Whether this row is the provisional New Session row: it stays on screen and
+ * does NOT spend a configured slot.
+ *
+ * Blank ONLY. A running session counts like any other — see the store note
+ * above for why that is deliberate rather than an oversight.
+ *
+ * A blank row is told apart from a real one by the store's `blank` flag, not by
+ * anything in the DOM: `SessionNodeItem` renders neither the relative time nor
+ * the "..." menu on a blank row, but both of those are things other tweaks and
+ * future host builds may touch, while `blank` is the value the host's own
+ * filtering, ordering and folding are written against.
+ *
+ * Unreadable rows answer `false`: a host without the store, or a row whose
+ * summary has not landed yet, is treated exactly as it was before this rule
+ * existed. The trim is a cosmetic fold, and hiding a row on a guess (or on a
+ * missing summary) is worse than counting it one time too many.
+ */
+function quotaExempt(row: Element): boolean {
+  const list = sessionList
+  if (list === undefined) return false
+  const id = sessionIdOf(row)
+  if (id === undefined) return false
+  // Wrapped for the same reason the binding is shape-checked: this runs inside
+  // the mount's MutationObserver callback and inside every pass, and a snapshot
+  // that is not the documented shape (a host build whose store face differs,
+  // rather than a user error) must degrade to "nothing is exempt" — exactly the
+  // pre-change behaviour — instead of throwing out of a pre-paint microtask,
+  // where it would skip that delivery's `schedule()` and stall the list.
+  try {
+    const summary = list.getSnapshot().byId[id]
+    return summary !== undefined && summary.blank === true
+  } catch {
+    return false
+  }
+}
+
+/** The rendered rows that DO spend a configured slot, in document order. */
+function quotaRows(rows: readonly HTMLElement[]): HTMLElement[] {
+  return rows.filter(row => !quotaExempt(row))
+}
+
+/**
  * Per-group trim target, kept on the element so a React re-render cannot lose
  * it. It holds the rows the group shows, which is the value a press moves and
  * also the value a deep selection latches the block up to (see `applyTrim`).
@@ -233,6 +353,24 @@ const TOUCHED_ATTR = 'data-cst-sid-touched'
  * wait for the host to re-render its own label. See {@link totalSessions}.
  */
 const TOTAL_ATTR = 'data-cst-sid-total'
+/**
+ * The largest slotted row count the cached total has been checked against — a
+ * high-water mark, raised whenever the list is seen to have grown past it.
+ *
+ * The total alone cannot say whether it is still true: it is only re-readable
+ * from the host's label, and once the host reports "everything shown" that label
+ * carries no integer at all. This mark is what makes a SHRINK visible — a
+ * Workspace whose sessions were archived or deleted renders fewer slotted rows
+ * than the mark, and a cache written when the list was longer must not be used
+ * any more. Marking the count only where the total is written would not do: that
+ * happens while the list is still folded, so the later, longer list sits above
+ * the mark and a shrink still reads as "grew, cache is fine" (review finding
+ * 2026-10-06; measured shape: seven sessions folded to five with two behind the
+ * fold, expanded through the host's own jump to `Infinity`, one archived → six
+ * rows on screen under a cache that still claimed seven, so the button offered a
+ * session that was not there and no press could clear it).
+ */
+const TOTAL_ROWS_ATTR = 'data-cst-sid-totalrows'
 
 /** Resolved configuration for one mount of the tweak. */
 export interface SidebarSessionCountConfig {
@@ -471,17 +609,23 @@ function totalIsKnowable(group: Element): boolean {
   const button = hostButton(group)
   // No button at all: the host's own fold hides nothing, so what is rendered IS
   // the total — the same reading `totalSessions` makes for this state.
-  if (button === null) return sessionRows(group).length > 0
+  if (button === null) return quotaRows(sessionRows(group)).length > 0
   if (button.getAttribute('aria-expanded') !== 'true') return false
   const cached = Number(group.getAttribute(TOTAL_ATTR))
-  return Number.isFinite(cached) && cached > 0 && cached >= sessionRows(group).length
+  return Number.isFinite(cached) && cached > 0 && cached >= quotaRows(sessionRows(group)).length
 }
 
 /**
- * How many sessions the Workspace has, or null when it cannot be read yet.
+ * How many SLOTTED sessions the Workspace has, or null when it cannot be read
+ * yet.
  *
- * The host's label plus the rows it has rendered add up to the total, exactly:
- * the label carries the sessions above its limit, the DOM carries the rest.
+ * The host's label plus the slotted rows it has rendered add up to the total,
+ * exactly: the label carries the idle sessions above the host's limit, and the
+ * rows it renders unconditionally — the provisional New Session row this trim
+ * exempts, and every running session — are all slotted rows, so the only
+ * sessions the label can be counting are slotted ones. `notRendered + rendered`
+ * is therefore the slotted total, and `shown` measures the same unit (see
+ * `applyTrim`).
  *
  * The result is cached on the group because the total does NOT change when the
  * user presses "show more" — only the split between rendered and hidden does.
@@ -500,28 +644,64 @@ function totalIsKnowable(group: Element): boolean {
  * (measured shape: nine sessions, configured seven, six archived → the button
  * kept reading "展开其余 6 个会话" over a three-row list). The cache is therefore
  * dropped whenever the host reports it is showing everything it has.
+ *
+ * The button disappearing is only ONE of the two shapes a shrink takes, and the
+ * second one is why {@link TOTAL_ROWS_ATTR} exists. Once the host's limit is
+ * `Infinity` — which this tweak itself drives it to, whenever the group's idle
+ * count is within one host step of that limit — the button is STILL rendered
+ * (its condition reads the host's own five-row fold, not its limit) while its
+ * label has no integer left, so the "no button" test never fires. Sessions
+ * archived after that reduce the rendered rows under a cache that still claims
+ * the old total, and the button goes on offering sessions that are not there:
+ * measured 2026-10-06 (review), expand a nine-session Workspace to "all",
+ * archive three, and every remaining row was on screen while the button still
+ * read "展开其余 3 个会话" — and no press could clear it, because `growTo` sees
+ * `aria-expanded="true"` and only waits. The cache therefore carries a
+ * high-water mark of the rendered slotted rows it has been checked against
+ * ({@link TOTAL_ROWS_ATTR}), raised whenever the list is seen to grow past it;
+ * the moment the list falls BELOW the mark the cache is dropped and `rendered`
+ * takes over, which IS the total once the host renders everything it has.
  */
 function totalSessions(group: Element): number | null {
   const notRendered = hostNotRendered(group)
-  const rendered = sessionRows(group).length
+  // The SLOTTED rows: the host's own label counts Sessions above its idle
+  // quota, so pairing it with every rendered row would add the exempt rows to
+  // the total a second time — the New Session row would appear as a hidden
+  // session on the button, and the remainder would never reach zero.
+  const rendered = quotaRows(sessionRows(group)).length
   if (notRendered > 0) {
     const total = notRendered + rendered
     setAttr(group, TOTAL_ATTR, String(total))
+    setAttr(group, TOTAL_ROWS_ATTR, String(rendered))
     return total
   }
   // No host button: the host's own fold is hiding nothing, so `rendered` IS the
   // total. Any cache from when the Workspace was larger is stale by definition.
   if (hostButton(group) === null) {
     clearAttr(group, TOTAL_ATTR)
+    clearAttr(group, TOTAL_ROWS_ATTR)
     return rendered > 0 ? rendered : null
   }
   // A button with no integer in its label is the host's "everything is shown"
-  // state. Its flag is derived from the host's LIMIT while the rows it has
-  // committed can lag behind (see `growTo`), so the cache is what tells "really
-  // everything" apart from "the flag is ahead of the DOM" — and it may only be
-  // used while it still covers what is rendered.
+  // state — its flag comes from the host's LIMIT while the rows it has committed
+  // can lag behind (see `growTo`), so the cache is what tells "really everything"
+  // apart from "the flag is ahead of the DOM". It stays usable while the list has
+  // not shrunk below the largest slotted count it has been checked against (see
+  // {@link TOTAL_ROWS_ATTR}), and the LARGER of the two figures is the honest
+  // one: the cache leads while rows are still arriving, and the rows lead once
+  // the Workspace has grown past it.
   const cached = Number(group.getAttribute(TOTAL_ATTR))
-  if (Number.isFinite(cached) && cached >= rendered && cached > 0) return cached
+  const cachedRows = Number(group.getAttribute(TOTAL_ROWS_ATTR))
+  if (Number.isFinite(cached) && cached > 0 && Number.isFinite(cachedRows)
+    && rendered >= cachedRows) {
+    if (rendered > cachedRows) setAttr(group, TOTAL_ROWS_ATTR, String(rendered))
+    return Math.max(cached, rendered)
+  }
+  // Unusable, or measured on a longer list than the one on screen: drop it so no
+  // later pass can read it again, and answer from the rows — with the host
+  // rendering everything it has, that count IS the total.
+  clearAttr(group, TOTAL_ATTR)
+  clearAttr(group, TOTAL_ROWS_ATTR)
   return rendered > 0 ? rendered : null
 }
 
@@ -616,6 +796,15 @@ function stateSignature(group: Element): string {
   }
   return [
     rows.length,
+    // Which rows are exempt from the quota, in order. Nothing else in this
+    // signature moves when the New Session row starts being a real session —
+    // the user sent its first message — yet that single bit changes how many
+    // slots the block may spend, and a matching fingerprint makes both the
+    // observer's inline trim and the sweep skip the group, which would leave
+    // the fold one row wrong until some unrelated mutation arrived (the row
+    // would keep its free pass and the list would show one row too many).
+    // `quotaExempt` reads the store, so this is one mask per row per signature.
+    rows.map(row => (quotaExempt(row) ? 'e' : 'q')).join(''),
     hidden,
     firstHiddenKey,
     last?.getAttribute('data-row-key') ?? '',
@@ -746,11 +935,45 @@ function selectionNeed(
   remember: boolean,
 ): number {
   const selected = selectedRow(group)
-  const index = selected === null ? -1 : rows.findIndex(row => row === selected || row.contains(selected))
+  // The index is taken among the SLOTTED rows, not all rendered ones: the
+  // exempt rows above the selection (the New Session row leads its Workspace)
+  // never spend a slot, so counting them would demand a block one size too
+  // wide — the same row would sit at position `index + 1` on screen and the
+  // block would be `initial + k × step` for a `k` no press could produce.
+  const slotted = quotaRows(rows)
+  const index = selected === null
+    ? -1
+    : slotted.findIndex(row => row === selected || row.contains(selected))
   if (index >= 0) {
     const need = nextConfiguredSize(index + 1, config)
     if (remember) setAttr(group, SELECTION_ATTR, String(need))
     return need
+  }
+  // The selection is IN this group but is not a slotted row, which leaves
+  // exactly one possibility: it is the exempt New Session row. That selection
+  // needs no block — the row is on screen whatever the trim says — and the
+  // remembered requirement belongs to a real session that is no longer
+  // selected, so it is DROPPED here.
+  //
+  // Dropping it is not a nicety, it is what keeps 收起 working (review finding,
+  // 2026-10-06). Leaving the remembered value in place pins `visibleTarget` at
+  // `max(trim, remembered)` for the whole time the user sits in the New Session
+  // row — which is the normal state right after pressing "New session" — so the
+  // press writes the configured count into `TRIM_ATTR` and the list does not
+  // move: `pending` reads 0, the pressed mark stays, and the button goes on
+  // saying 收起 while nothing reacts. Measured before the fix: open the
+  // fifteenth session (block latched at 21), press "New session", press 收起 →
+  // still 21 rows. The pre-change code wrote `nextConfiguredSize(1)` here
+  // because the New Session row was counted as rendered row 0, so this case
+  // folded correctly and the slotted index broke it.
+  //
+  // Only a selection that is really in this group clears anything: `selectedRow`
+  // already scopes to this group, so a null selection still falls through to the
+  // remembered value below — that is the "moved to another Workspace, or the row
+  // is not rendered" case the never-cleared rule exists for.
+  if (selected !== null) {
+    if (remember) clearAttr(group, SELECTION_ATTR)
+    return 0
   }
   const remembered = Number(group.getAttribute(SELECTION_ATTR))
   return Number.isFinite(remembered) && remembered > 0 ? remembered : 0
@@ -850,6 +1073,21 @@ function applyTrim(group: Element, trim: number, config: SidebarSessionCountConf
   const revealed: HTMLElement[] = []
   let shown = 0
   for (const row of rows) {
+    // The provisional New Session row is always on screen and never counts
+    // against the configured block: counting the row the user has only just
+    // created as one of the configured sessions hid a real one below it, which
+    // is the report this branch answers. A RUNNING row is not exempt — it is a
+    // real session and spends a slot like any other (see `quotaExempt`).
+    // `shown` therefore counts SLOTTED rows only — the same number the
+    // remainder is `total - shown` against, with `total` read as the slotted
+    // total in `totalSessions`.
+    if (quotaExempt(row)) {
+      if (row.hasAttribute(HIDDEN_ATTR)) {
+        clearAttr(row, HIDDEN_ATTR)
+        revealed.push(row)
+      }
+      continue
+    }
     if (shown < target) {
       // Unmarking a marked row is a reveal — the user was looking at a fold a
       // moment ago — so the batch is eased in below, unless the animation
@@ -1004,7 +1242,11 @@ async function growTo(
   for (;;) {
     if (performance.now() >= deadline || !alive()) return
     const target = Math.max(needed, visibleTarget(group, sessionRows(group), trimOf(group, config), config))
-    const count = sessionRows(group).length
+    // Slotted rows, so an exempt row (the New Session one) never satisfies a
+    // target that asks for real sessions. Counting every rendered row here is
+    // what made a Workspace showing a New Session row stop one slotted session
+    // short of the configured block: the grow read `count >= target` as done.
+    const count = quotaRows(sessionRows(group)).length
     if (count >= target) return
     const button = hostButton(group)
     // No button left means the host is rendering every row it has.
@@ -1025,7 +1267,10 @@ async function growTo(
     let landed = false
     for (let frame = 0; frame < PRESS_LAND_FRAMES && performance.now() < deadline; frame += 1) {
       await nextFrame()
-      if (sessionRows(group).length > count) {
+      // Same unit as `count` above: a press hands over SLOTTED rows, and the
+      // exempt row is already on screen, so a total-row comparison could read a
+      // press as landed on a render that only repainted the New Session row.
+      if (quotaRows(sessionRows(group)).length > count) {
         landed = true
         break
       }
@@ -1113,7 +1358,12 @@ function publish(
   knownTotal?: number | null,
 ): void {
   const { total, pending } = remainder(group, shown, knownTotal)
-  const rows = sessionRows(group).length
+  // Slotted rows: `total` and `shown` are both slotted counts (see
+  // `totalSessions` and `applyTrim`), so the "nothing left to fold" test has to
+  // read the same units. Counting the exempt rows here would leave the pressed
+  // mark (and with it the 收起 control) on groups whose whole visible list is a
+  // New Session row plus a block no press has passed.
+  const rows = quotaRows(sessionRows(group)).length
   // A group the user pressed at least once keeps its fold control even with
   // nothing left to reveal — that is the only way back to the configured block.
   // Unless the list has nothing left to fold at all: nothing to reveal, no more
@@ -1184,7 +1434,10 @@ async function syncGroup(
   // uses, so this is a statement about the Workspace, not about the host's
   // transient button state.
   const rows = sessionRows(group)
-  const rowsNow = rows.length
+  // Slotted rows, like `knownTotal` (see `totalSessions`): both operands of
+  // `needsGrow` have to be the same count, or an exempt New Session row reads
+  // as a session the grow still has to fetch.
+  const rowsNow = quotaRows(rows).length
   const knownTotal = totalSessions(group)
   /**
    * The block this pass is about to show: the stored trim, raised for the
@@ -1329,16 +1582,38 @@ export function setupSidebarSessionCount(
     tWorkspace = undefined
   }
 
+  /**
+   * Bind the session-list store for this mount, the way the locate button does.
+   *
+   * Captured once per mount and published on the module-level `sessionList`
+   * that {@link quotaExempt} reads: the rows themselves are re-read live from
+   * the store on every call, so nothing here has to be refreshed. The plugin
+   * injects `sessions` already, so `get` cannot throw for a missing service —
+   * the try/catch and the shape check are for a host build whose store face is
+   * not the documented one, which leaves the tweak behaving exactly as it did
+   * before this rule existed.
+   */
   const removeStyles = injectStyles()
   let disposed = false
   /** Whether this mount is still live; every write path consults it. */
   const isAlive = (): boolean => !disposed
   /**
    * This mount's identity, stamped on every button it wires (see
-   * {@link ownButton}). Unique per mount and per bundle instance, so a button
-   * left by a pass that outlived its mount is replaced rather than adopted.
+   * {@link ownButton}) and recorded beside the store binding it publishes.
+   * Unique per mount and per bundle instance, so a button — or a binding — left
+   * by a pass that outlived its mount is replaced rather than adopted.
    */
   const token = nextInstanceToken()
+
+  let boundList: SessionListLike | undefined
+  try {
+    const list = (ctx.get('sessions') as { list?: unknown } | undefined)?.list as SessionListLike | undefined
+    if (list !== undefined && typeof list.getSnapshot === 'function') boundList = list
+  } catch {
+    boundList = undefined
+  }
+  sessionList = boundList
+  sessionListOwner = token
 
   /**
    * One pass per group, in flight.
@@ -1398,7 +1673,7 @@ export function setupSidebarSessionCount(
    */
   const blockIsShort = (group: Element): boolean => {
     const rows = sessionRows(group)
-    return rows.length < visibleTarget(group, rows, trimOf(group, config), config) && canGrow(group)
+    return quotaRows(rows).length < visibleTarget(group, rows, trimOf(group, config), config) && canGrow(group)
   }
 
   /**
@@ -1624,7 +1899,7 @@ export function setupSidebarSessionCount(
     // and every press after the first reveals a single row. `syncGroup` grows
     // the host to meet the trim, and stops on its own once the host runs out
     // of button.
-    const next = hasMore(group, Math.min(rows.length, current)) ? current + config.expandStep : config.initialCount
+    const next = hasMore(group, Math.min(quotaRows(rows).length, current)) ? current + config.expandStep : config.initialCount
     if (busy.has(group)) {
       pendingPress.set(group, next)
       // Cut the in-flight pass's glide settle short — that wait is the only
@@ -1684,6 +1959,7 @@ export function setupSidebarSessionCount(
       clearAttr(group, TRIM_ATTR)
       clearAttr(group, TOUCHED_ATTR)
       clearAttr(group, TOTAL_ATTR)
+      clearAttr(group, TOTAL_ROWS_ATTR)
       // A press queued behind a running pass is dropped with the trim it was
       // computed from: `servePendingPress` skips a group with no rows, and this
       // makes sure the slot is empty even if nothing releases `busy` again
@@ -1706,7 +1982,11 @@ export function setupSidebarSessionCount(
       // that pass is synchronous and touches no host button. A group whose
       // trim is still above its rendered rows goes through the grow path
       // below, one press at a time.
-      if (sessionRows(group).length < trimOf(group, config)
+      // Slotted rows, for the same reason `growTo` reads them: a Workspace whose
+      // list is the New Session row plus a full block has nothing left to press
+      // for, and counting the exempt row would send it into the grow path on
+      // every sweep.
+      if (quotaRows(sessionRows(group)).length < trimOf(group, config)
         && canGrow(group)) {
         growing.push(group)
         continue
@@ -1882,6 +2162,14 @@ export function setupSidebarSessionCount(
     if (disposed) return
     disposed = true
     observer.disconnect()
+    // Release the store binding, but only if it is still this mount's. The test
+    // is the instance TOKEN, not the list reference: `ctx.get('sessions').list`
+    // is one object for the whole context, so reference equality says yes for a
+    // successor's binding too — see `sessionListOwner`.
+    if (sessionListOwner === token) {
+      sessionList = undefined
+      sessionListOwner = undefined
+    }
     // Only the buttons THIS instance wired. Every live button carries the token
     // of the mount that published it, so a disposer that lands after a successor
     // has already claimed a group cannot remove the successor's control — the
@@ -1917,6 +2205,7 @@ export function resetSidebarSessionCountLayout(): void {
     clearAttr(group, TRIM_ATTR)
     clearAttr(group, TOUCHED_ATTR)
     clearAttr(group, TOTAL_ATTR)
+    clearAttr(group, TOTAL_ROWS_ATTR)
     clearAttr(group, SELECTION_ATTR)
   }
 }
