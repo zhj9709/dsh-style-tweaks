@@ -53,7 +53,7 @@ export interface ResolvedStyleTweaksConfig {
   legacyContextMeter: boolean
   /** Whether the user can close (hide) Workspaces without deleting them. */
   workspaceClose: boolean
-  /** Whether the Desktop-only external Settings launcher is enabled. */
+  /** Whether the external Settings launcher is enabled. */
   desktopSettingsLauncher: boolean
   /** Ids of the Workspaces currently closed (hidden but fully retained). */
   closedWorkspaces: readonly string[]

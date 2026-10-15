@@ -73,7 +73,7 @@ export const DEFAULT_CONTEXT_PILL_NO_TOOLTIP = false
 export const DEFAULT_LEGACY_CONTEXT_METER = false
 /** Default state of the workspace-close tweak (off: the stock Workspace list stays complete). */
 export const DEFAULT_WORKSPACE_CLOSE = false
-/** Default state of the Desktop-only external Settings launcher (off). */
+/** Default state of the external Settings launcher (off). */
 export const DEFAULT_DESKTOP_SETTINGS_LAUNCHER = false
 /** No Workspace is closed until the user closes one. */
 export const DEFAULT_CLOSED_WORKSPACES: readonly string[] = []

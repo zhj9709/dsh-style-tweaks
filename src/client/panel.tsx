@@ -13,7 +13,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { LocaleKey, Translate } from './i18n.ts'
 import { isFieldRejection, SettingsClient } from './settings-client.ts'
-import { isDesktopRuntime, resolveValue } from './settings-value.ts'
+import { resolveValue } from './settings-value.ts'
 import { MIN_DIALOG_WIDTH, MAX_DIALOG_WIDTH, MIN_SIDE_MARGIN, MIN_RIGHTBAR_WIDTH_PERCENT, MAX_RIGHTBAR_WIDTH_PERCENT, MIN_HISTORY_PAGE_SIZE, MAX_HISTORY_PAGE_SIZE, STEP_HISTORY_PAGE_SIZE, MIN_SIDEBAR_SESSION_INITIAL_COUNT, MIN_SIDEBAR_SESSION_EXPAND_STEP, STEP_SIDEBAR_SESSION_COUNT } from './tweak-config.ts'
 import { TWEAKS, type TweakDescriptor } from './tweaks/registry.ts'
 import { closedWorkspaceEntries, restoreClosedWorkspace } from './tweaks/workspace-close.ts'
@@ -426,22 +426,20 @@ export function SettingsSection({ controller, t }: SettingsSectionProps) {
         ) : null}
       </section>
 
-      {isDesktopRuntime() ? (
-        <section className="cst-panel">
-          <div className="cst-section-label">{t('sectionDesktop')}</div>
-          <div className="cst-field">
-            <div className="cst-field-top">
-              <span className="cst-label">{t('desktopSettingsLauncher')}<Hint text={t('desktopSettingsLauncherHint')} /></span>
-              <div className="cst-controls">
-                <div className="cst-seg">
-                  <button type="button" className={resolved.desktopSettingsLauncher ? 'cst-seg-active' : ''} disabled={!writable} onClick={() => { save('desktopSettingsLauncher', true) }}>{t('tweakOn')}</button>
-                  <button type="button" className={!resolved.desktopSettingsLauncher ? 'cst-seg-active' : ''} disabled={!writable} onClick={() => { save('desktopSettingsLauncher', false) }}>{t('tweakOff')}</button>
-                </div>
+      <section className="cst-panel">
+        <div className="cst-section-label">{t('sectionSidebar')}</div>
+        <div className="cst-field">
+          <div className="cst-field-top">
+            <span className="cst-label">{t('desktopSettingsLauncher')}<Hint text={t('desktopSettingsLauncherHint')} /></span>
+            <div className="cst-controls">
+              <div className="cst-seg">
+                <button type="button" className={resolved.desktopSettingsLauncher ? 'cst-seg-active' : ''} disabled={!writable} onClick={() => { save('desktopSettingsLauncher', true) }}>{t('tweakOn')}</button>
+                <button type="button" className={!resolved.desktopSettingsLauncher ? 'cst-seg-active' : ''} disabled={!writable} onClick={() => { save('desktopSettingsLauncher', false) }}>{t('tweakOff')}</button>
               </div>
             </div>
           </div>
-        </section>
-      ) : null}
+        </div>
+      </section>
 
       <section className="cst-panel">
         <div className="cst-section-label">{t('sectionHistory')}</div>

@@ -10,11 +10,6 @@
 import { resolveClientConfig } from './tweak-config.ts'
 import type { ResolvedStyleTweaksConfig } from './tweak-types.ts'
 
-/** Whether this page is the Electron Desktop renderer. */
-export function isDesktopRuntime(): boolean {
-  return typeof globalThis !== 'undefined' && 'dshDesktop' in globalThis
-}
-
 /**
  * The settings document as the plugin's own route returns it (every field
  * optional), and the same document with every default materialized.

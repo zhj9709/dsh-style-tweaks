@@ -372,8 +372,9 @@ export interface StyleTweaksConfig {
    */
   workspaceClose?: boolean
   /**
-   * Show the external Settings gear beside the Desktop account menu's More
-   * entry. The preference is shown only in the Desktop client and defaults
+   * Show the external Settings gear beside the account menu's More entry. The
+   * preference is shown in both the Web and the Desktop client, since both
+   * mount the same account menu in the sidebar's launcher slot, and defaults
    * off; when disabled the host's native More → Settings path remains.
    */
   desktopSettingsLauncher?: boolean
@@ -508,8 +509,8 @@ export const DEFAULT_LEGACY_CONTEXT_METER = false
  */
 export const DEFAULT_WORKSPACE_CLOSE = false
 /**
- * Default: off — the external Desktop Settings gear is opt-in, so the host's
- * native More → Settings path remains the default.
+ * Default: off — the external Settings gear is opt-in, so the host's native
+ * More → Settings path remains the default.
  */
 export const DEFAULT_DESKTOP_SETTINGS_LAUNCHER = false
 /** No Workspace is closed until the user closes one. */
@@ -692,7 +693,7 @@ export interface ResolvedStyleTweaksConfig {
   legacyContextMeter: boolean
   /** Whether the user can close (hide) Workspaces without deleting them. */
   workspaceClose: boolean
-  /** Whether the Desktop-only external Settings launcher is enabled. */
+  /** Whether the external Settings launcher is enabled. */
   desktopSettingsLauncher: boolean
   /** Ids of the Workspaces currently closed (hidden but fully retained). */
   closedWorkspaces: readonly string[]

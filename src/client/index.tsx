@@ -31,7 +31,7 @@ import { TWEAKS } from './tweaks/registry.ts'
 import { assertTweakI18nComplete, en, zh } from './i18n.ts'
 import { SettingsClient } from './settings-client.ts'
 import { SettingsSection } from './panel.tsx'
-import { isDesktopRuntime, resolveValue, sameMountInputs, type ResolvedTweaks } from './settings-value.ts'
+import { resolveValue, sameMountInputs, type ResolvedTweaks } from './settings-value.ts'
 import { installHistoryPageSizeTransport, resetHistoryPageSizeTargets, setHistoryPageSizeTargets } from './tweaks/history-page-size.ts'
 import { installRightbarInitialWidth } from './tweaks/rightbar-initial-width.ts'
 import { injectStableSessionTitleStyles } from './tweaks/stable-session-title.ts'
@@ -205,17 +205,18 @@ export function apply(ctx: ClientContext): void {
   )
   const controller = new SettingsClient()
 
-  // The Desktop launcher is opt-in. Keep it out of the DOM until the settings
-  // snapshot has resolved true, and tear it down immediately when the user
-  // turns it back off so the host's native More → Settings path is restored.
+  // The external launcher is opt-in and runs in both renderers: Web and Desktop
+  // mount the same AccountMenu in `settings.launcher`, so both put Settings
+  // behind More. Keep it out of the DOM until the settings snapshot has
+  // resolved true, and tear it down immediately when the user turns it back off
+  // so the host's native More → Settings path is restored.
   ctx.effect(() => {
     let cleanup: (() => void) | undefined
     const sync = (): void => {
       const value = controller.getSnapshot().value
-      const enabled = isDesktopRuntime()
-        && (value === undefined
-          ? DEFAULT_DESKTOP_SETTINGS_LAUNCHER
-          : resolveValue(value).desktopSettingsLauncher)
+      const enabled = value === undefined
+        ? DEFAULT_DESKTOP_SETTINGS_LAUNCHER
+        : resolveValue(value).desktopSettingsLauncher
       if (enabled && cleanup === undefined) {
         cleanup = setupDesktopSettingsLauncher(
           () => t('desktopSettingsLabel'),

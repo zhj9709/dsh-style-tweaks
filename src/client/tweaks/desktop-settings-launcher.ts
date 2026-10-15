@@ -1,16 +1,17 @@
 /**
- * dsh-style-tweaks — Desktop-only external Settings launcher.
+ * dsh-style-tweaks — external Settings launcher (Web and Desktop).
  *
- * Desktop's account menu occupies the single `settings.launcher` slot. Its
- * native Settings action therefore lives inside the portalled More menu and
- * there is no public `openSettings` callback for a footer action to call. This
- * module keeps the account menu intact, places a small gear beside it, and
- * uses a short-lived DOM bridge to activate the native menu item. No Electron
- * main/preload API and no private React tree walking is involved.
+ * The account menu occupies the single `settings.launcher` slot in both
+ * renderers, so in both, the native Settings action lives inside the portalled
+ * More menu and there is no public `openSettings` callback for a footer action
+ * to call. This module keeps the account menu intact, places a small gear
+ * beside it, and uses a short-lived DOM bridge to activate the native menu
+ * item. No Electron main/preload API and no private React tree walking is
+ * involved.
  *
- * The bridge is deliberately defensive: Desktop builds and CSS module hashes
- * can change, so every structural match is checked and a failed match falls
- * back to the untouched native More menu.
+ * The bridge is deliberately defensive: host builds and CSS module hashes can
+ * change, so every structural match is checked and a failed match falls back to
+ * the untouched native More menu.
  */
 
 import { touchesScope } from '../mutation-scope.ts'
@@ -165,10 +166,6 @@ function installStyles(): Cleanup {
   return () => { releaseStyleNode(style, owner) }
 }
 
-function isDesktop(): boolean {
-  return typeof globalThis !== 'undefined' && 'dshDesktop' in globalThis
-}
-
 function accountContext(): AccountContext | undefined {
   const areas = document.querySelectorAll<HTMLElement>(ACCOUNT_AREA_SELECTOR)
   for (const area of areas) {
@@ -315,7 +312,9 @@ function syncGearSize(button: HTMLButtonElement, trigger: HTMLElement): void {
 }
 
 /**
- * Mount the Desktop-only launcher. The returned disposer is safe to call more
+ * Mount the external launcher. Both renderers mount the same AccountMenu in
+ * `settings.launcher`, so this is not Desktop-specific: Web puts Settings behind
+ * More exactly the way Desktop does. The returned disposer is safe to call more
  * than once and restores every host node it touched.
  */
 export function setupDesktopSettingsLauncher(label: () => string, hint: () => string): Cleanup {
@@ -327,7 +326,6 @@ export function setupDesktopSettingsLauncher(label: () => string, hint: () => st
     previous()
     setGlobalCleanup(undefined)
   }
-  if (!isDesktop()) return () => {}
   const observerTarget = document.body ?? document.documentElement
   if (observerTarget === null) return () => {}
 
