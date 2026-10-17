@@ -48,8 +48,10 @@
  * keeps its inert form. Strict resolution (the default) further requires
  * the providing fiber to be active, which is exactly the state a
  * clickable chip implies. `close()` itself throws when no seat is mounted
- * (e.g. the panel was never opened); those rejections are swallowed: there
- * is no session surface to act on.
+ * (e.g. the panel was never opened); that rejection is the expected no-op and
+ * stays silent, as there is no session surface to act on. Any *other*
+ * rejection is reported (once per page): a host-side change would otherwise
+ * only show as the gesture quietly stopping to close tabs.
  *
  * ## The three capture-phase listeners
  *
@@ -97,6 +99,7 @@
  */
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import { reportOnce } from '../report-once.ts'
 
 /** The middle mouse button's `button` value across pointer and mouse events. */
 const MIDDLE_BUTTON = 1
@@ -179,6 +182,30 @@ function isMiddleTarget(target: EventTarget | null): boolean {
 }
 
 /**
+ * The host's own wording for "there is no seat to close".
+ *
+ * `close()` rejects with this when no session surface is mounted (e.g. the
+ * panel was never opened). It is the expected no-op, not a failure, so it must
+ * not reach the console on every middle click. Matched as a substring of the
+ * message because the prefix carrying the service name (`sidebarRight: …`) is
+ * not part of the contract this tweak depends on, and on the message rather
+ * than the error type because the host rejects with a plain value.
+ */
+const NO_SURFACE_MESSAGE = 'no session surface is mounted'
+
+/**
+ * Whether a `close()` rejection is the host's expected "nothing to close".
+ *
+ * Module-private on purpose: the auxclick handler below is its only caller, and
+ * the plugin's published type surface should not grow a helper that exists to
+ * grade an error. Tests drive it through that handler.
+ * @param error - Whatever `close()` rejected with.
+ */
+function isExpectedCloseRejection(error: unknown): boolean {
+  return (error instanceof Error ? error.message : String(error)).includes(NO_SURFACE_MESSAGE)
+}
+
+/**
  * HMR duplicate-setup guard (same pattern as the other DOM-listener
  * tweaks): a hot reload can run setup again before the previous effect's
  * cleanup ran, so the stale cleanup is invoked first, keeping three
@@ -245,8 +272,19 @@ export function setupSidebarMiddleClickClose(ctx: ClientContext): () => void {
       if (face === undefined) return
       try {
         face.close(tabId)
-      } catch {
-        // `sidebarRight: no session surface is mounted` — no seat, no tab.
+      } catch (error) {
+        // `sidebarRight: no session surface is mounted` — no seat, no tab:
+        // the expected no-op, so nothing is printed for it. Anything else is
+        // a host-side change (a renamed face, a moved guard) that would
+        // otherwise be invisible — the gesture would just quietly stop
+        // closing tabs — so it is reported, once per page rather than on
+        // every middle click, and at `warn` like the other user-gesture
+        // failures in this plugin.
+        if (!isExpectedCloseRejection(error)) {
+          reportOnce('sidebar-close-failure', () => {
+            console.warn('[dsh-style-tweaks] closing a sidebar tab failed', error)
+          })
+        }
       }
       return
     }

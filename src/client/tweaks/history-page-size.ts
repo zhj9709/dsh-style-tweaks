@@ -56,19 +56,46 @@
  *     `session/follow` frame leaves — the settings read may well land after
  *     it. With the master switch off the push also clears the cold-start flag,
  *     so an off feature skips the frame parse entirely and the only cost left
- *     is one `includes` + one `JSON.parse` per `session/page` request.
+ *     is one `includes` per `session/page` request — with no target set the
+ *     body is not parsed at all.
  *   - The wrappers are never unwound (unwinding around other plugins' own
  *     wrappers is not worth the risk). Plugin teardown instead releases
  *     ownership and zeroes the targets, so a disabled instance stops
  *     rewriting without leaving the page patched-but-active.
  */
 
+import { reportOnce } from '../report-once.ts'
 import { MAX_HISTORY_PAGE_SIZE, MIN_HISTORY_PAGE_SIZE } from '../tweak-config.ts'
 
 const STORAGE_KEY = 'dsh-style-tweaks.history-page-size'
 
 /** Key of the per-page shared state (see the module doc). */
 const SHARED_KEY = '__dsh_style_tweaks_history_page_size__'
+
+/**
+ * Report once per page — and once per frame kind — that a recognized frame no
+ * longer parses.
+ *
+ * Both rewrite entry points bail to `null` in several NORMAL cases — the
+ * request carried no `maxMessages` field, the frame is not the follow open,
+ * the feature is off — and none of those deserve a line. A body that
+ * contains the route name but no longer parses is different: it means the
+ * host's wire shape moved under the tweak, and without this the page-size
+ * setting would simply stop working with nothing anywhere saying so.
+ *
+ * The one-shot is per `kind` on purpose: `session/page` and `session/follow`
+ * are two independent wire shapes and either may drift without the other, so
+ * sharing one flag would let whichever drifts first silence the other.
+ * @param kind - Which frame failed, for the message.
+ * @param error - The parse error that surfaced it.
+ */
+function warnWireDrift(kind: string, error: unknown): void {
+  reportOnce(`wire-drift:${kind}`, () => {
+    console.error(
+      `[dsh-style-tweaks] ${kind} request no longer parses — the host wire shape changed; the configured history page size is not applied (${error instanceof Error ? error.message : String(error)})`,
+    )
+  })
+}
 
 interface HistoryPageSizeTargets {
   /** Exact `maxMessages` value; null leaves every native request untouched. */
@@ -262,6 +289,11 @@ function applyPageSize(request: HistoryRequest, targets: HistoryPageSizeTargets)
 
 /** Rewrite the `session/page` request body; `null` = no change. */
 function rewritePageBody(body: string, targets: HistoryPageSizeTargets): string | null {
+  // Symmetric with the follow frame, and for the same reason: with no target
+  // there is nothing to rewrite. Skipping the parse also keeps a disabled
+  // feature from reaching the drift report over a body it would not have
+  // touched, and costs nothing — the dispatcher already ran `includes`.
+  if (targets.pageSize === null) return null
   try {
     const msg = JSON.parse(body) as {
       payload?: { args?: { request?: HistoryRequest } }
@@ -269,7 +301,8 @@ function rewritePageBody(body: string, targets: HistoryPageSizeTargets): string 
     const request = msg?.payload?.args?.request
     if (request === undefined || !applyPageSize(request, targets)) return null
     return JSON.stringify(msg)
-  } catch {
+  } catch (error) {
+    warnWireDrift('session/page', error)
     return null
   }
 }
@@ -293,7 +326,8 @@ function rewriteFollowFrame(data: string, targets: HistoryPageSizeTargets): stri
     const holder = typeof args.maxMessages === 'number' ? args : (args.request ?? undefined)
     if (holder === undefined || !applyPageSize(holder, targets)) return null
     return JSON.stringify(msg)
-  } catch {
+  } catch (error) {
+    warnWireDrift('session/follow', error)
     return null
   }
 }
