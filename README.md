@@ -2,7 +2,7 @@
 
 简体中文 | [English](README.en.md)
 
-> 依赖版本：deepseek-harness v0.1.7-rc.2
+> 依赖版本：deepseek-harness 0.1.7-rc.2 ~ <0.3.0（运行基线 0.2.1-rc.2；编译依赖 0.2.0-rc.1；旧宿主上相关调整项保持惰性）
 
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）Web UI 插件：为 DSH 界面提供一套可选的样式调整——精确的对话列宽控制，以及侧边栏与设置面板的一系列小幅度修复。
 
@@ -213,9 +213,13 @@ Test-Path "$link\src"       # 期望 True，证明确实指到源码
 
 **怎么确认新代码真的加载了**：
 
-- 页面里应当存在 `style[data-tweak-css="cst-*"]` 之类的注入样式，以及各调整项留在 `window` 上的
-  `__cst_*_cleanup__` 守卫（例如 `__cst_project_running_indicator_cleanup__`）。守卫是 `undefined`
-  说明该调整项没挂上。
+- 页面里应当存在注入样式 `style[data-tweak-css]`（数量随最近一次设置保存里的开关变化；**不要用
+  `cst-*` 通配去数**：`dsh-style-tweaks-base` / `-conversation-width` / `-pills-decimals` /
+  `-turn-time-pill` 这四个 id 不是 `cst-` 前缀，2026-10-17 实测共 17 个节点、其中 13 个是 `cst-*`），
+  以及各调整项留在 `window` 上的 `__cst_*_cleanup__` 守卫（例如
+  `__cst_project_running_indicator_cleanup__`）。守卫是 `undefined` 说明该调整项没挂上。
+  `window` 上若出现 `__cst_reported__*` 键，说明对应的一次性诊断已经触发过（键名带 topic，如
+  `__cst_reported__wire-drift:session/page__`）——那是「设置静默失效」留下的痕迹，值得顺着查。
 - 想知道页面拿到的是哪一版 bundle：从 `performance.getEntriesByType('resource')` 里取
   `/plugins/??…dsh-style-tweaks…` 那条的完整 URL，再 `fetch(url, { cache: 'no-store' })`，
   检查里面有没有你刚加进去的标识符。构建后页面**不会**主动重新请求这个 URL，这本身也是判断

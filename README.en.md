@@ -2,7 +2,7 @@
 
 English | [简体中文](README.md)
 
-> Dependency version: deepseek-harness v0.1.7-rc.2
+> Dependency version: deepseek-harness 0.1.7-rc.2 ~ <0.3.0 (running baseline 0.2.1-rc.2, compile-time deps 0.2.0-rc.1; affected tweaks stay inert on older hosts)
 
 A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) web plugin that bundles a precise conversation column-width control with a collection of opt-in style tweaks for DSH's UI — including small fixes for the sidebar and the settings panel.
 
@@ -224,10 +224,14 @@ Test-Path "$link\src"       # expect True, proving it really points at the sourc
 
 **How to confirm the new code is really loaded**:
 
-- The page should carry injected styles such as `style[data-tweak-css="cst-*"]`, plus the
-  `__cst_*_cleanup__` guards each tweak leaves on `window` (e.g.
-  `__cst_project_running_indicator_cleanup__`). A guard that is `undefined` means that tweak never
-  mounted.
+- The page should carry injected styles as `style[data-tweak-css]` (their number follows the switches
+  of the last settings save; **do not count them with a `cst-*` glob**: `dsh-style-tweaks-base`,
+  `-conversation-width`, `-pills-decimals` and `-turn-time-pill` are not `cst-`-prefixed — 17 nodes
+  were measured on 2026-10-17, 13 of them `cst-*`), plus the `__cst_*_cleanup__` guards each tweak
+  leaves on `window` (e.g. `__cst_project_running_indicator_cleanup__`). A guard that is `undefined`
+  means that tweak never mounted. A `__cst_reported__*` key on `window` means the matching one-shot
+  diagnostic already fired (the topic is in the key, e.g. `__cst_reported__wire-drift:session/page__`)
+  — that is the trace a silently dead setting leaves behind, and it is worth following up.
 - To see which build the page actually got: take the full URL of the
   `/plugins/??…dsh-style-tweaks…` entry from `performance.getEntriesByType('resource')`, then
   `fetch(url, { cache: 'no-store' })` and look for an identifier you just added. The page does
