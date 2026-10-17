@@ -525,11 +525,11 @@ button.cst-pills-pill:hover,button.cst-pills-pill[aria-expanded='true']{backgrou
 
 function installPillsStyles(): () => void {
   const id = 'dsh-style-tweaks-pills-decimals'
-  let style = document.querySelector<HTMLStyleElement>(`style[data-plugin-css="${id}"]`)
+  let style = document.querySelector<HTMLStyleElement>(`style[data-tweak-css="${id}"]`)
   if (style === null) {
     style = document.createElement('style')
-    style.dataset.plugin = 'dsh-style-tweaks'
-    style.dataset.pluginCss = id
+    style.dataset.tweak = 'cst'
+    style.dataset.tweakCss = id
     document.head.appendChild(style)
   }
   const owner = claimStyleNode(style, PILLS_CSS)

@@ -342,11 +342,11 @@ div:has(> div[class*="_dock"]) [class*="_trailing"] > button[class*="_primary"]{
 
 function installMeterStyles(): () => void {
   const id = 'dsh-style-tweaks-legacy-context-meter'
-  let style = document.querySelector<HTMLStyleElement>(`style[data-plugin-css="${id}"]`)
+  let style = document.querySelector<HTMLStyleElement>(`style[data-tweak-css="${id}"]`)
   if (style === null) {
     style = document.createElement('style')
-    style.dataset.plugin = 'dsh-style-tweaks'
-    style.dataset.pluginCss = id
+    style.dataset.tweak = 'cst'
+    style.dataset.tweakCss = id
     document.head.appendChild(style)
   }
   const owner = claimStyleNode(style, METER_CSS)

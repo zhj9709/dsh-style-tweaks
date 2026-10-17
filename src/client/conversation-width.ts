@@ -106,11 +106,11 @@ export interface ConversationWidthController {
  */
 export function installConversationWidthStyles(widthPx: number, sideMargin: number): ConversationWidthController {
   const id = 'dsh-style-tweaks-conversation-width'
-  let style = document.querySelector<HTMLStyleElement>(`style[data-plugin-css="${id}"]`)
+  let style = document.querySelector<HTMLStyleElement>(`style[data-tweak-css="${id}"]`)
   if (style === null) {
     style = document.createElement('style')
-    style.dataset.plugin = 'dsh-style-tweaks'
-    style.dataset.pluginCss = id
+    style.dataset.tweak = 'cst'
+    style.dataset.tweakCss = id
     document.head.appendChild(style)
   }
   const owner = claimStyleNode(style)

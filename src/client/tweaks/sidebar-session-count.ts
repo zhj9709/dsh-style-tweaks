@@ -449,6 +449,7 @@ function injectStyles(): () => void {
   let style = document.querySelector<HTMLStyleElement>(`style[data-tweak-css="${id}"]`)
   if (style === null) {
     style = document.createElement('style')
+    style.dataset.tweak = 'cst'
     style.dataset.tweakCss = id
     document.head.appendChild(style)
   }

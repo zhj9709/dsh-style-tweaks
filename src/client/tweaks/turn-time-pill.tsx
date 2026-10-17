@@ -195,11 +195,11 @@ const TURN_TIME_PILL_CSS = `
 /** Install the ported skin (idempotent). */
 function installTurnTimePillStyles(): () => void {
   const id = 'dsh-style-tweaks-turn-time-pill'
-  let style = document.querySelector<HTMLStyleElement>(`style[data-plugin-css="${id}"]`)
+  let style = document.querySelector<HTMLStyleElement>(`style[data-tweak-css="${id}"]`)
   if (style === null) {
     style = document.createElement('style')
-    style.dataset.plugin = 'dsh-style-tweaks'
-    style.dataset.pluginCss = id
+    style.dataset.tweak = 'cst'
+    style.dataset.tweakCss = id
     document.head.appendChild(style)
   }
   const owner = claimStyleNode(style, TURN_TIME_PILL_CSS)
