@@ -40,8 +40,8 @@ export function resolveValue(value: TweaksValue | undefined): ResolvedTweaks {
 
 /**
  * Whether two resolved snapshots would mount the same tweaks with the same
- * captured values. Two groups of keys are deliberately ignored, because
- * neither drives a mount:
+ * captured values. Three groups of keys are deliberately ignored, because
+ * none of them drives a mount:
  *
  *   - `closedWorkspaces` — only the `workspaceClose` boolean mounts anything,
  *     and the workspace-close tweak holds its own live channel to the settings
@@ -52,14 +52,23 @@ export function resolveValue(value: TweaksValue | undefined): ResolvedTweaks {
  *     rewrites install once per page load and `sync` pushes the live targets
  *     itself, above this check. Without the exclusion every ± click on the
  *     stepper would tear down and re-install every tweak.
+ *   - `dialogWidth` / `usePluginWidth` / `sideMargin` / `desktopSettingsLauncher`
+ *     — each has its own `ctx.effect` subscription that applies the value in
+ *     place (`installConversationWidthStyles#setWidth` / the launcher's
+ *     mount-unmount sync). No `TWEAK_INJECTORS` entry reads any of them, so a
+ *     width or margin step used to remount all ~18 tweaks (all their observers,
+ *     style claims and latches) for nothing. Keep these keys out of the mount
+ *     fingerprint; add one back only if a tweak's mount starts capturing it.
  *
- * Both exclusions are safe only because `sync` does its transport work before
+ * The exclusions are safe only because `sync` does its transport work before
  * consulting this function — keep that order.
  */
 export function sameMountInputs(left: ResolvedTweaks, right: ResolvedTweaks): boolean {
   for (const key of Object.keys(right) as Array<keyof ResolvedTweaks>) {
     if (key === 'closedWorkspaces') continue
     if (key === 'historyPageSizeEnabled' || key === 'historyPageSize' || key === 'historyPageSizeColdStart') continue
+    if (key === 'dialogWidth' || key === 'usePluginWidth' || key === 'sideMargin') continue
+    if (key === 'desktopSettingsLauncher') continue
     if (left[key] !== right[key]) return false
   }
   return true
