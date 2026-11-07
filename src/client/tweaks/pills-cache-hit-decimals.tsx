@@ -66,6 +66,7 @@
  */
 
 import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ComponentType, type ReactNode, type RefObject } from 'react'
+import { createPortal } from 'react-dom'
 import * as dshPrimitives from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   IconClockOutlineRegular,
@@ -225,7 +226,20 @@ function useStatDialog(controlled: PillDialog): StatDialogSeat {
   return { open, setOpen, rootRef, panelRef, pos }
 }
 
-/** Dialog surface with the shared heading + rule, over the ported panel skin. */
+/**
+ * Dialog surface with the shared heading + rule, over the ported panel skin.
+ *
+ * The panel is portaled to `document.body`, exactly like the host's own stat
+ * dialogs. It has to be: the panel is `position: fixed` and the composer's
+ * seat carries `will-change: transform`, which makes that seat the
+ * containing block for fixed-position descendants — so a panel rendered in
+ * place would be laid out against the seat's box instead of the viewport,
+ * and `useAnchoredPosition`'s viewport coordinates would put it off-screen
+ * (measured on 0.2.2-rc.1: the panel asked for `left: 452px` and landed at
+ * `x = 776` in a 764px-wide window, i.e. outside the viewport entirely).
+ * In the body it has no transformed ancestor, and the coordinates mean what
+ * they say.
+ */
 function StatDialogPanel({ seat, label, titleIcon, titleValue, rows }: {
   seat: StatDialogSeat
   label: string
@@ -233,7 +247,7 @@ function StatDialogPanel({ seat, label, titleIcon, titleValue, rows }: {
   titleValue?: string
   rows: ReactNode
 }): ReactNode {
-  return (
+  return createPortal(
     <div
       ref={seat.panelRef}
       className="cst-pilldlg-panel"
@@ -247,7 +261,8 @@ function StatDialogPanel({ seat, label, titleIcon, titleValue, rows }: {
       </div>
       <div className="cst-pilldlg-titleRule" aria-hidden />
       <dl className="cst-pilldlg-details">{rows}</dl>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
