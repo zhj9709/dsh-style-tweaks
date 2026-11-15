@@ -42,11 +42,13 @@
  *
  * Fidelity notes: data rides the same durable projections (`sessionStats`,
  * `tokenUsage`) — no window fold, so without the projection the row renders
- * nothing, like the legacy line. The dialog surface and placement reuse
- * DSH's own primitives (`useAnchoredPosition`, `useDismissOnOutsidePointer`)
- * and the ported `stat-dialog` skin, including 0.2.1's outside-CLICK close
- * (see `useStatDialog`), which is what lets a keyboard activation of the
- * sibling pill swap dialogs instead of stacking them. Copy lives in the
+ * nothing, like the legacy line. The dialog surface keeps DSH's surviving
+ * primitive (`useDismissOnOutsidePointer`) and the ported `stat-dialog` skin,
+ * while its placement is this plugin's own (`stat-panel-placement.ts`: the
+ * `useAnchoredPosition` primitive it used to borrow is gone in 0.2.2-rc.2).
+ * The skin includes 0.2.1's outside-CLICK close (see `useStatDialog`), which
+ * is what lets a keyboard activation of the sibling pill swap dialogs instead
+ * of stacking them. Copy lives in the
  * plugin namespace (`pills.*` keys). The dialog skin is the plugin's own
  * (`cst-pilldlg-*`), so `opaque-stat-dialogs` covers it by name. The row
  * root keeps the `data-composer-stats` marker so pre-0.1.6-alpha.2 hosts'
@@ -71,7 +73,6 @@ import * as dshPrimitives from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   IconClockOutlineRegular,
   IconDatabaseOutlineRegular,
-  useAnchoredPosition,
   useDismissOnOutsidePointer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
@@ -84,6 +85,7 @@ import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { composerStatsCells, probeComposerDockLayout } from './composer-dock.ts'
 import { billedInputTokens, formatCacheHitPercent } from './stats-cache-hit.ts'
+import { STAT_PANEL_MEASURE_STYLE, useStatPanelPlacement } from './stat-panel-placement.ts'
 import { claimStyleNode, releaseStyleNode } from '../style-node.ts'
 
 /** The slot machinery's translate seat for the plugin namespace. */
@@ -154,17 +156,6 @@ function formatTokensPerSecond(tps: number): string {
 
 // ── Trigger-anchored stat dialog seat (ported from stat-dialog.ts) ────────
 
-/** Viewport margin the placement clamp keeps (the Menu portal margin). */
-const PANEL_MARGIN = 12
-/** Distance between the trigger's top edge and the panel's bottom. */
-const PANEL_GAP = 8
-
-/**
- * Unplaced portal panel: hidden but laid out so the clamp measures real
- * dimensions (the `useAnchoredPosition` measure pass).
- */
-const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
-
 /** External open state one pill's dialog reads and writes (the row's exclusive slot). */
 type PillDialog = Pick<StatDialogSeat, 'open' | 'setOpen'>
 
@@ -193,14 +184,7 @@ function useStatDialog(controlled: PillDialog): StatDialogSeat {
   const rootRef = useRef<HTMLSpanElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
-  const pos = useAnchoredPosition({
-    open,
-    anchorRef: rootRef,
-    panelRef,
-    side: 'top',
-    gap: PANEL_GAP,
-    margin: PANEL_MARGIN,
-  })
+  const pos = useStatPanelPlacement({ open, anchorRef: rootRef, panelRef })
 
   useDismissOnOutsidePointer(rootRef, open, setOpen, panelRef)
   useEffect(() => {
@@ -234,7 +218,7 @@ function useStatDialog(controlled: PillDialog): StatDialogSeat {
  * seat carries `will-change: transform`, which makes that seat the
  * containing block for fixed-position descendants — so a panel rendered in
  * place would be laid out against the seat's box instead of the viewport,
- * and `useAnchoredPosition`'s viewport coordinates would put it off-screen
+ * and the placement's viewport coordinates would put it off-screen
  * (measured on 0.2.2-rc.1: the panel asked for `left: 452px` and landed at
  * `x = 776` in a 764px-wide window, i.e. outside the viewport entirely).
  * In the body it has no transformed ancestor, and the coordinates mean what
@@ -253,7 +237,7 @@ function StatDialogPanel({ seat, label, titleIcon, titleValue, rows }: {
       className="cst-pilldlg-panel"
       role="dialog"
       aria-label={label}
-      style={seat.pos ?? MEASURE_STYLE}
+      style={seat.pos ?? STAT_PANEL_MEASURE_STYLE}
     >
       <div className="cst-pilldlg-title">
         <span className="cst-pilldlg-titleLabel">{titleIcon}{label}</span>

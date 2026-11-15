@@ -20,16 +20,16 @@
  * span the host wraps `usageAction` and the clock in, found structurally as
  * the last child of the row marked `data-clock="end"`.
  *
- * The portal lands last in that cluster, so two rules restore the 0.1.6
+ * The portal lands last in that cluster, so one rule restores the 0.1.6
  * seating: the clock (the cluster's `_timeEnd` span — the one element the
- * portal follows) is ordered after the pill, and the 8px flex gap against the
- * usage pill is rebated by 6px, which is 0.1.6's own `.root + .root` pairing
- * (there the two pills were siblings of one flat row). The row then reads
- * usage → time → clock, exactly the cluster 0.1.6 printed, and CSS `order`
- * keeps that placement stable no matter how React inserts the host's own
- * children. A cluster without the usage pill keeps the plain 8px rhythm (the
- * rebate is scoped to a preceding element that is not the clock); one without
- * a clock ends with the pill.
+ * portal follows) is ordered after the pill, so the row reads usage → time →
+ * clock, exactly the cluster 0.1.6 printed, and CSS `order` keeps that
+ * placement stable no matter how React inserts the host's own children. The
+ * pair keeps the cluster's plain 8px gap rather than 0.1.6's `.root + .root`
+ * -6px rebate: that rebate squeezed the pair to 2px for 28px capsules, while
+ * the host's usage pill and this one are both 8px-rounded since 0.1.7-rc.2,
+ * where 2px reads as the two buttons touching. A cluster without a clock ends
+ * with the pill.
  *
  * ## Where the figures come from
  *
@@ -51,10 +51,11 @@
  * ## Dialog
  *
  * The dialog is this module's own port of the host's stat-dialog seat: the
- * same public primitives the host itself uses (`useAnchoredPosition` for the
- * clamped above-the-trigger placement, `useDismissOnOutsidePointer` for
- * outside-pointer dismissal) plus the Escape handler, over a ported copy of
- * the shared surface skin and of 0.1.6's `TurnTimePanel` markup, down to its
+ * host's surviving primitive (`useDismissOnOutsidePointer`) for outside-pointer
+ * dismissal, plus the Escape handler, over this plugin's own clamped
+ * above-the-trigger placement (`stat-panel-placement.ts` — 0.2.2-rc.2 deleted
+ * the `useAnchoredPosition` primitive both ports grew on), a ported copy of the
+ * shared surface skin, and 0.1.6's `TurnTimePanel` markup down to its
  * `data-turn-time-details` marker. Rows appear only when their figure is
  * known: a turn whose settlement stream carries no token keeps just the
  * duration row, as 0.1.6 did. Nothing is appended after the panel mounts, so
@@ -76,7 +77,7 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  IconClockOutlineRegular, useAnchoredPosition, useDismissOnOutsidePointer,
+  IconClockOutlineRegular, useDismissOnOutsidePointer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 // Type-only imports activate the Context declaration merges this file reads
@@ -86,6 +87,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { deriveTurnRunMs, deriveTurnSpeedMetrics } from './assistant-stream-timing.ts'
+import { STAT_PANEL_MEASURE_STYLE, useStatPanelPlacement } from './stat-panel-placement.ts'
 import { claimStyleNode, releaseStyleNode } from '../style-node.ts'
 
 /** Full props of the actions-row entry (owner + session kit + plugin locale seat). */
@@ -169,16 +171,20 @@ function formatTokensPerSecond(tps: number): string {
 /**
  * The ported pill and dialog skin: 0.1.6's `TurnUsagePanel.module.css` trigger
  * geometry (so the restored pill measures exactly like the usage pill beside
- * it, including the pair's padding rebate and the narrow-viewport collapse)
- * over 0.1.7's `stat-dialog.module.css` surface, plus the two cluster rules
- * that seat the pill between the usage pill and the clock.
+ * it, plus the narrow-viewport collapse) over 0.1.7's `stat-dialog.module.css`
+ * surface, plus the cluster rule that seats the pill between the usage pill and
+ * the clock. The corner radius follows the host's current pill instead of
+ * 0.1.6's: 0.1.7-rc.2 moved the usage pill from a 28px capsule to
+ * `--dsw-radius-sm` (8px), and the restored pill has to paint the same hover
+ * shape beside it on every supported host — which is also why the pair keeps
+ * the cluster's plain 8px gap instead of 0.1.6's -6px rebate.
  */
 const TURN_TIME_PILL_CSS = `
 .cst-ttp-root{display:inline-flex;min-width:0}
 [class$="_endInfo"] > [class$="_timeEnd"]{order:1}
-[class$="_endInfo"] > *:not([class$="_timeEnd"]) ~ .cst-ttp-root{margin-left:-6px}
-.cst-ttp-trigger{display:inline-flex;align-items:center;gap:4px;min-width:0;height:calc(28px + var(--dsh-content-font-delta,0px));padding:6px 8px;border:none;border-radius:28px;background:transparent;color:var(--dsw-alias-label-tertiary);font-size:calc(var(--dsh-content-font-size-secondary,13px) - 1px);font-variant-numeric:tabular-nums;line-height:calc(24px + var(--dsh-content-font-delta,0px));white-space:nowrap;cursor:pointer}
-.cst-ttp-trigger:hover,.cst-ttp-trigger[aria-expanded='true']{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-tertiary)}
+.cst-ttp-trigger{display:inline-flex;align-items:center;gap:4px;min-width:0;height:calc(28px + var(--dsh-content-font-delta,0px));padding:6px 8px;border:none;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-tertiary);font-size:calc(var(--dsh-content-font-size-secondary,13px) - 1px);font-variant-numeric:tabular-nums;line-height:calc(24px + var(--dsh-content-font-delta,0px));white-space:nowrap;cursor:pointer}
+.cst-ttp-trigger[aria-expanded='true']{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-tertiary)}
+@media (hover:hover){.cst-ttp-trigger:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-tertiary)}}
 .cst-ttp-trigger svg{width:calc(15px + var(--dsh-content-font-delta,0px));height:calc(15px + var(--dsh-content-font-delta,0px));flex:none}
 .cst-ttp-label{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .cst-ttp-panel{position:fixed;z-index:1100;box-sizing:border-box;width:max-content;min-width:min(300px,calc(100vw - 24px));max-width:min(440px,calc(100vw - 24px));padding:16px;border:0;border-radius:12px;background:var(--dsw-specific-menu);backdrop-filter:var(--dsw-menu-backdrop-filter);--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);cursor:default}
@@ -189,7 +195,7 @@ const TURN_TIME_PILL_CSS = `
 .cst-ttp-details{display:grid;grid-template-columns:minmax(76px,auto) minmax(0,1fr);gap:6px 16px;margin:0;color:var(--dsw-alias-label-tertiary)}
 .cst-ttp-details dt,.cst-ttp-details dd{min-width:0;margin:0}
 .cst-ttp-details dd{color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;text-align:right}
-@media (max-width:480px){.cst-ttp-trigger{justify-content:center;width:calc(28px + var(--dsh-content-font-delta,0px));padding:6px}.cst-ttp-label{display:none}[class$="_endInfo"] > *:not([class$="_timeEnd"]) ~ .cst-ttp-root{margin-left:0}}
+@media (max-width:480px){.cst-ttp-trigger{justify-content:center;width:calc(28px + var(--dsh-content-font-delta,0px));padding:6px}.cst-ttp-label{display:none}}
 `
 
 /** Install the ported skin (idempotent). */
@@ -206,28 +212,16 @@ function installTurnTimePillStyles(): () => void {
   return () => { releaseStyleNode(style, owner) }
 }
 
-/**
- * Unplaced portal panel: hidden but laid out so the clamp measures real
- * dimensions (the host's own first-paint measure pass).
- */
-const MEASURE_STYLE = { visibility: 'hidden', left: 0, top: 0 } as const
-
-/** Viewport margin the placement clamp keeps (the host's stat-dialog value). */
-const PANEL_MARGIN = 12
-/** Distance between the trigger's top edge and the panel's bottom. */
-const PANEL_GAP = 8
-
 /** Open state, refs and clamped placement for one pill dialog (ported seat). */
 function usePillDialog() {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLSpanElement | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
-  // Same placement and dismissal rules as the host's stat dialogs, through the
-  // same public primitives: fixed above the trigger, clamped into the
-  // viewport, re-placed on scroll/resize while open.
-  const pos = useAnchoredPosition({
-    open, anchorRef: rootRef, panelRef, side: 'top', gap: PANEL_GAP, margin: PANEL_MARGIN,
-  })
+  // Same placement and dismissal rules as the host's stat dialogs: fixed above
+  // the trigger, clamped into the viewport, re-placed on scroll/resize while
+  // open. The placement comes from this plugin's own hook — the host primitive
+  // both ports used (`useAnchoredPosition`) is gone in 0.2.2-rc.2.
+  const pos = useStatPanelPlacement({ open, anchorRef: rootRef, panelRef })
   useDismissOnOutsidePointer(rootRef, open, setOpen, panelRef)
   useEffect(() => {
     if (!open) return
@@ -272,7 +266,7 @@ function TurnTimePillButton({ stats, hostT, t }: {
           className="cst-ttp-panel"
           role="dialog"
           aria-label={title}
-          style={pos ?? MEASURE_STYLE}
+          style={pos ?? STAT_PANEL_MEASURE_STYLE}
         >
           <div className="cst-ttp-title">
             <span className="cst-ttp-titleLabel">
@@ -348,7 +342,12 @@ function createTurnTimePill(ctx: ClientContext) {
       setCluster(anchor === null ? null : trailingClusterOf(anchor))
     }, [])
 
-    useEffect(() => {
+    // Layout effect, not a passive one: the host paints this row (usage pill +
+    // clock) in the same commit, and a passive derive lands a frame or more
+    // later — the pill would pop in between usage and clock after the row was
+    // already visible, shifting the clock right. Deriving before paint puts the
+    // pill in the first painted frame, like the host's own usage pill.
+    useLayoutEffect(() => {
       const anchor = anchorRef.current
       const footer = anchor?.closest<HTMLElement>('[data-turn-tail]') ?? null
       const raw = footer?.getAttribute('data-turn-tail') ?? null
